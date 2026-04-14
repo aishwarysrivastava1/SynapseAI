@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
     const task = taskDoc.data()!;
-    if (task.status !== "SUBMITTED") {
-      return NextResponse.json({ error: "Task not in SUBMITTED state" }, { status: 400 });
+    if (task.status !== "VERIFICATION_PENDING") {
+      return NextResponse.json({ error: "Task not in VERIFICATION_PENDING state" }, { status: 400 });
     }
 
     // 2. Download image from Firebase Storage URL

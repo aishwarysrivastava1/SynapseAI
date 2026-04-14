@@ -15,10 +15,13 @@ if (!admin.apps.length) {
       });
     }
   } catch (error) {
-    console.log('Firebase admin initialization error', error);
+    console.error('Firebase admin initialization error', error);
   }
 }
 
-export const adminDb = admin.firestore();
-export const adminStorage = admin.storage();
+// Guard against calling these when no app was successfully initialised
+const app = admin.apps[0] ?? null;
+
+export const adminDb = app ? admin.firestore() : null as unknown as admin.firestore.Firestore;
+export const adminStorage = app ? admin.storage() : null as unknown as admin.storage.Storage;
 export const FieldValue = admin.firestore.FieldValue;

@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Loader } from "@googlemaps/js-api-loader";
 import { NeedNode, HotspotResult } from "../../lib/types";
 
+declare const google: any;
+
 interface SynapseMapProps {
   needs: NeedNode[];
   hotspots: HotspotResult[];
@@ -12,9 +14,9 @@ interface SynapseMapProps {
 
 export default function SynapseMap({ needs, hotspots, onMarkerClick }: SynapseMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const circlesRef = useRef<google.maps.Circle[]>([]);
+  const [map, setMap] = useState<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const circlesRef = useRef<any[]>([]);
 
   useEffect(() => {
     const initMap = async () => {
