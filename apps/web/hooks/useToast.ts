@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext } from "react";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -16,9 +16,6 @@ interface ToastContextType {
   dismiss: (id: string) => void;
 }
 
-import { createContext as _createContext } from "react";
-
-// We export the context so ToastProvider can consume it
 export const ToastContext = createContext<ToastContextType>({
   toasts: [],
   toast: () => {},
