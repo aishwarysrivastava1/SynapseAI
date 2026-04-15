@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Routes open to everyone (unauthenticated OK)
-const PUBLIC_PATHS = ["/", "/login", "/select-role"];
+const PUBLIC_PATHS = ["/", "/login", "/select-role", "/public"];
 
 // NGO-only entry point
 export const NGO_PATHS = ["/ngo-dashboard"];
