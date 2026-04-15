@@ -36,7 +36,7 @@ export default function TaskFeed() {
   };
 
   return (
-    <main className="p-5 pb-6">
+    <main className="p-5 lg:p-8 pb-6">
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Active Tasks</h1>

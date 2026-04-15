@@ -96,8 +96,8 @@ export default function NGOLoginPage() {
       </header>
 
       {/* Main */}
-      <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-8">
-        <div className="w-full max-w-4xl grid md:grid-cols-2 gap-10 items-center">
+      <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-8 lg:py-12">
+        <div className="w-full max-w-4xl lg:max-w-5xl grid md:grid-cols-2 gap-10 lg:gap-16 items-center">
 
           {/* Left — branding */}
           <div className="text-center md:text-left animate-slide-up">
@@ -106,7 +106,7 @@ export default function NGOLoginPage() {
                 <Building2 size={28} className="text-[#115E54]" />
               </div>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100 leading-tight mb-2">
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-gray-100 leading-tight mb-2">
               NGO Command Portal
             </h1>
             <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-8">

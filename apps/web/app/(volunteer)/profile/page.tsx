@@ -128,7 +128,7 @@ export default function ProfilePage() {
   ];
 
   return (
-    <main className="p-5 pb-8">
+    <main className="p-5 lg:p-8 pb-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Profile</h1>
