@@ -9,6 +9,7 @@ const firebaseConfig = {
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
 };
+console.log("Firebase config loaded with keys:", Object.keys(firebaseConfig).filter(k => firebaseConfig[k as keyof typeof firebaseConfig]));
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const auth = getAuth(app);
