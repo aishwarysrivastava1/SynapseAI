@@ -35,7 +35,7 @@ export default function LeaderboardPage() {
   const myRank = leaders.findIndex((v) => v.uid === user?.uid) + 1;
 
   return (
-    <main className="p-5 pb-8">
+    <main className="p-5 lg:p-8 pb-8">
       {/* Header */}
       <div className="flex items-center gap-2.5 mb-5">
         <div className="bg-[#115E54]/10 dark:bg-[#115E54]/20 p-2 rounded-xl">

@@ -120,7 +120,7 @@ export default function NGODashboard() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* Sidebar */}
-        <aside className="w-[320px] shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden animate-[fade-in_0.4s_ease-out]">
+        <aside className="w-[300px] xl:w-[340px] shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden animate-[fade-in_0.4s_ease-out]">
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
             <FileUpload onUploadSuccess={loadData} />
             <AnalyticsPanel needs={needs} vols={vols} />
