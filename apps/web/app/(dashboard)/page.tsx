@@ -4,7 +4,7 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../lib/auth";
 import { ThemeToggle } from "../../components/ui/ThemeToggle";
-import { Building2, Users, MapPin, BarChart3, Shield, Zap, CheckCircle, ArrowRight } from "lucide-react";
+import { Building2, Users, MapPin, BarChart3, Shield, Zap, CheckCircle, ArrowRight, Globe } from "lucide-react";
 import Link from "next/link";
 
 const NGO_FEATURES = [
@@ -172,8 +172,15 @@ export default function LandingPage() {
       </main>
 
       {/* ── Footer ─────────────────────────────────────────── */}
-      <footer className="relative z-10 text-center py-4 text-xs text-gray-400 dark:text-gray-600">
-        Sanchaalan Saathi — Team CrownBreakers
+      <footer className="relative z-10 text-center py-4 text-xs text-gray-400 dark:text-gray-600 flex flex-col items-center gap-2">
+        <Link
+          href="/public"
+          className="inline-flex items-center gap-1.5 text-[#115E54] hover:text-[#0d4a42] font-medium transition-colors"
+        >
+          <Globe size={12} />
+          View Public Transparency Dashboard
+        </Link>
+        <span>Sanchaalan Saathi — Team CrownBreakers</span>
       </footer>
     </div>
   );

@@ -86,6 +86,35 @@ export function useNotifications() {
   return { notifications, loading };
 }
 
+export function useAllVolunteers() {
+  const [volunteers, setVolunteers] = useState<FirestoreVolunteer[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "volunteers"),
+      orderBy("totalXP", "desc"),
+      limit(500)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: FirestoreVolunteer[] = [];
+      snapshot.forEach((doc) => {
+        data.push({ uid: doc.id, ...doc.data() } as FirestoreVolunteer);
+      });
+      setVolunteers(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("useAllVolunteers Firestore error:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return { volunteers, loading };
+}
+
 export function useNeeds(statusFilter?: string) {
   const [needs, setNeeds] = useState<FirestoreNeed[]>([]);
   const [loading, setLoading] = useState(true);
