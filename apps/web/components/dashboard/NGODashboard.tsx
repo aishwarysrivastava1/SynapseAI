@@ -11,40 +11,75 @@ import NotificationBell from "./NotificationBell";
 import TaskKanban from "./TaskKanban";
 import VolunteerRegistration from "./VolunteerRegistration";
 import { ThemeToggle } from "../ui/ThemeToggle";
-import { Map as MapIcon, LayoutDashboard, Users, LogOut } from "lucide-react";
-import { fetchNeeds, fetchVolunteers, fetchHotspots } from "../../lib/api";
-import { NeedNode, HotspotResult } from "../../lib/types";
+import { Map as MapIcon, LayoutDashboard, Users, LogOut, Activity, Zap, AlertTriangle, CheckCircle2, UserPlus } from "lucide-react";
+import { fetchVolunteers, fetchHotspots } from "../../lib/api";
+import { HotspotResult, NeedNode } from "../../lib/types";
+import { useNeeds } from "../../hooks/useFirestore";
+import { useActivityFeed } from "../../hooks/useActivityFeed";
 import { useAuth } from "../../lib/auth";
 import { useRouter } from "next/navigation";
+
+const ACTIVITY_ICON: Record<string, React.ReactNode> = {
+  NEED_REPORTED:   <AlertTriangle size={12} className="text-red-500" />,
+  TASK_ASSIGNED:   <Zap size={12} className="text-amber-500" />,
+  TASK_VERIFIED:   <CheckCircle2 size={12} className="text-[#48A15E]" />,
+  VOLUNTEER_JOINED:<UserPlus size={12} className="text-[#115E54]" />,
+};
+
+function timeAgo(ts: any): string {
+  if (!ts) return "";
+  const date = ts?.toDate ? ts.toDate() : new Date(ts);
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 60)   return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
 
 export default function NGODashboard() {
   const { signOut } = useAuth();
   const router = useRouter();
-  const [needs, setNeeds] = useState<NeedNode[]>([]);
-  const [vols, setVols] = useState<any[]>([]);
-  const [hotspots, setHotspots] = useState<HotspotResult[]>([]);
+
+  // ── Real-time Firestore data ────────────────────────────────────────────────
+  const { needs: firestoreNeeds, loading: needsLoading } = useNeeds();
+  const { events: activityEvents } = useActivityFeed(15);
+
+  // ── API-fetched data (spatial / hotspot, keep polling for map accuracy) ─────
+  const [vols, setVols]           = useState<any[]>([]);
+  const [hotspots, setHotspots]   = useState<HotspotResult[]>([]);
   const [selectedNeed, setSelectedNeed] = useState<NeedNode | null>(null);
   const [showVolunteers, setShowVolunteers] = useState(false);
-  const [viewMode, setViewMode] = useState<"map" | "kanban">("map");
+  const [viewMode, setViewMode]   = useState<"map" | "kanban">("map");
 
-  const loadData = useCallback(async () => {
+  const loadSpatialData = useCallback(async () => {
     try {
-      const fetchedNeeds = await fetchNeeds();
-      setNeeds(fetchedNeeds);
-      const fetchedVols = await fetchVolunteers();
+      const [fetchedVols, fetchedHotspots] = await Promise.all([
+        fetchVolunteers(),
+        fetchHotspots(),
+      ]);
       setVols(fetchedVols);
-      const fetchedHotspots = await fetchHotspots();
       setHotspots(fetchedHotspots);
-    } catch (error) {
-      console.error("Failed to sync dashboard data:", error);
+    } catch (err) {
+      console.error("Failed to load spatial data:", err);
     }
   }, []);
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 30000);
+    loadSpatialData();
+    const interval = setInterval(loadSpatialData, 30000);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [loadSpatialData]);
+
+  // Map Firestore needs → NeedNode shape for map/list components
+  const needs: NeedNode[] = firestoreNeeds.map((n) => ({
+    id: n.id,
+    type: n.type,
+    sub_type: n.sub_type,
+    description: n.description,
+    urgency_score: n.urgency_score,
+    population_affected: n.population_affected,
+    status: n.status,
+    location: n.location,
+  }));
 
   const handleSignOut = async () => {
     await signOut();
@@ -54,7 +89,7 @@ export default function NGODashboard() {
   return (
     <div className="flex flex-col h-screen bg-[#F5F6F1] dark:bg-gray-950">
 
-      {/* ── Top Navigation Bar ──────────────────────────── */}
+      {/* ── Top Nav ───────────────────────────────────────────────────────────── */}
       <header className="h-14 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center px-5 gap-3 shrink-0 z-20 shadow-sm">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo/logo-icon.png" alt="logo" className="h-8 w-8 object-contain shrink-0" />
@@ -63,8 +98,13 @@ export default function NGODashboard() {
           <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">NGO Command Centre</p>
         </div>
 
+        {/* Real-time indicator */}
+        <div className="hidden sm:flex items-center gap-1.5 ml-3 bg-[#48A15E]/10 dark:bg-[#48A15E]/20 border border-[#48A15E]/25 text-[#2A8256] dark:text-[#48A15E] text-[10px] font-semibold px-2.5 py-1 rounded-full">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#48A15E] animate-pulse" />
+          Live
+        </div>
+
         <div className="ml-auto flex items-center gap-2">
-          {/* Volunteer layer toggle */}
           <button
             onClick={() => setShowVolunteers(!showVolunteers)}
             className={`flex items-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition-all ${
@@ -77,7 +117,6 @@ export default function NGODashboard() {
             Volunteers
           </button>
 
-          {/* View mode toggle */}
           <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-0.5">
             <button
               onClick={() => setViewMode("map")}
@@ -116,16 +155,47 @@ export default function NGODashboard() {
         </div>
       </header>
 
-      {/* ── Body ────────────────────────────────────────── */}
+      {/* ── Body ──────────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
 
         {/* Sidebar */}
         <aside className="w-[300px] xl:w-[340px] shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col overflow-hidden animate-[fade-in_0.4s_ease-out]">
           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-            <FileUpload onUploadSuccess={loadData} />
+            <FileUpload onUploadSuccess={loadSpatialData} />
             <AnalyticsPanel needs={needs} vols={vols} />
-            <VolunteerRegistration onSuccess={loadData} />
+            <VolunteerRegistration onSuccess={loadSpatialData} />
             <NeedList needs={needs} onNeedClick={(need) => setSelectedNeed(need)} />
+
+            {/* ── Real-time Activity Feed ────────────────────────────────────── */}
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+                <Activity size={14} className="text-[#115E54]" />
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Live Activity</span>
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#48A15E] animate-pulse" />
+              </div>
+              <div className="divide-y divide-gray-50 dark:divide-gray-800">
+                {activityEvents.length === 0 ? (
+                  <p className="text-xs text-gray-400 dark:text-gray-600 text-center py-5">
+                    No activity yet
+                  </p>
+                ) : (
+                  activityEvents.map((event) => (
+                    <div key={event.id} className="flex items-start gap-2.5 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <div className="mt-0.5 shrink-0">
+                        {ACTIVITY_ICON[event.type] ?? <Activity size={12} className="text-gray-400" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">{event.title}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{event.description}</p>
+                      </div>
+                      <span className="text-[9px] text-gray-400 dark:text-gray-600 shrink-0 mt-0.5 tabular-nums">
+                        {timeAgo(event.timestamp)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         </aside>
 
@@ -144,7 +214,6 @@ export default function NGODashboard() {
                   onMarkerClick={(need: any) => setSelectedNeed(need)}
                 />
 
-                {/* Selected need detail panel */}
                 {selectedNeed && (
                   <div className="absolute top-4 right-4 bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-200 dark:border-gray-800 p-5 w-72 z-10 animate-[slice-in_0.3s_ease-out]">
                     <div className="flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 pb-3 mb-3">

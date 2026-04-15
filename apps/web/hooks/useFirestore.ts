@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, orderBy, onSnapshot, doc } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, onSnapshot, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { FirestoreTask, FirestoreVolunteer, Notification } from "../lib/types";
+import { FirestoreTask, FirestoreVolunteer, FirestoreNeed, Notification } from "../lib/types";
 
 export function useTasks(statusFilter?: string) {
   const [tasks, setTasks] = useState<FirestoreTask[]>([]);
@@ -84,4 +84,42 @@ export function useNotifications() {
   }, []);
 
   return { notifications, loading };
+}
+
+export function useNeeds(statusFilter?: string) {
+  const [needs, setNeeds] = useState<FirestoreNeed[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let q = query(
+      collection(db, "needs"),
+      orderBy("urgency_score", "desc"),
+      limit(100)
+    );
+
+    if (statusFilter) {
+      q = query(
+        collection(db, "needs"),
+        where("status", "==", statusFilter),
+        orderBy("urgency_score", "desc"),
+        limit(100)
+      );
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: FirestoreNeed[] = [];
+      snapshot.forEach((doc) => {
+        data.push({ id: doc.id, ...doc.data() } as FirestoreNeed);
+      });
+      setNeeds(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("useNeeds Firestore error:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [statusFilter]);
+
+  return { needs, loading };
 }

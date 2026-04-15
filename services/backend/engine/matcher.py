@@ -112,21 +112,31 @@ async def perform_auto_assignment():
                 vid=v_id, nid=n_id
             )
             
-            # 2. Update Firestore (Task status)
-            # This assumes create_task_from_need has already run
-            firebase_service.db.collection("tasks").document(n_id).update({
-                "status": "CLAIMED",
-                "claimedBy": v_id,
-                "claimedAt": firestore.SERVER_TIMESTAMP
-            })
-            
-            # 3. Notify Volunteer
+            # 2. Update Firestore task + need status
+            if firebase_service.db:
+                firebase_service.db.collection("tasks").document(n_id).update({
+                    "status": "CLAIMED",
+                    "claimedBy": v_id,
+                    "claimedAt": firestore.SERVER_TIMESTAMP,
+                })
+            firebase_service.update_need_status(n_id, "CLAIMED")
+
+            # 3. Notification
+            vol_name = match.get("volunteer_name", "A volunteer")
             firebase_service.add_notification(
-                title="New Assignment",
-                message=f"You have been auto-assigned to a high-priority task (ID: {n_id}). See dashboard for details.",
+                title="Task Auto-Assigned",
+                message=f"{vol_name} has been assigned to task {n_id}.",
                 n_type="SUCCESS"
             )
-            
+
+            # 4. Activity feed
+            firebase_service.log_activity(
+                event_type="TASK_ASSIGNED",
+                title="Task Auto-Assigned",
+                description=f"{vol_name} matched to need {n_id} (score: {match.get('score', 0)})",
+                metadata={"volunteer_id": v_id, "need_id": n_id, "score": match.get("score")},
+            )
+
             logger.info(f"Auto-assigned volunteer {v_id} to need {n_id}")
             
         except Exception as e:

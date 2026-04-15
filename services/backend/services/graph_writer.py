@@ -111,26 +111,49 @@ async def write_extraction_to_graph(
                          )
                      # Handle other causal edges if generated in advanced queries
 
-            # In a real app we'd also push real-time to Firestore.
-            firebase_service.add_notification(
-                title="New Emergency Reported",
-                message=f"A new {props.get('type', 'emergency')} has been reported. Severity: {props.get('urgency_score', 0.5)*10}/10",
-                n_type="URGENT" if props.get('urgency_score', 0.5) > 0.7 else "INFO"
-            )
-            
             loc_idx = next((i for i, n in enumerate(nodes) if n["label"] == "Location"), -1)
             loc_node = nodes[loc_idx] if loc_idx != -1 else {}
             lp = loc_node.get("properties", {})
+            location_name = lp.get("name", "Unknown Area")
+            urgency = props.get("urgency_score", 0.5)
+            need_type = props.get("type", "unknown")
 
-            # Create a task in Firestore for tracking
-            firebase_service.create_task_from_need(need_id, {
-                "type": props.get("type", "unknown"),
+            need_payload = {
+                "type": need_type,
+                "sub_type": props.get("sub_type", ""),
                 "description": props.get("description", ""),
-                "urgency_score": props.get("urgency_score", 0.5),
+                "urgency_score": urgency,
+                "population_affected": props.get("population_affected", 1),
                 "lat": resolved_lat,
                 "lng": resolved_lng,
-                "location_name": lp.get("name", "Unknown Area")
-            })
+                "location_name": location_name,
+            }
+
+            # Sync need to Firestore for real-time frontend access
+            firebase_service.sync_need_to_firestore(need_id, need_payload)
+
+            # Create a task in Firestore for volunteer tracking
+            firebase_service.create_task_from_need(need_id, need_payload)
+
+            # Notification
+            firebase_service.add_notification(
+                title="New Emergency Reported",
+                message=f"A new {need_type} need reported in {location_name}. Severity: {urgency*10:.1f}/10",
+                n_type="URGENT" if urgency > 0.7 else "INFO"
+            )
+
+            # Activity feed event
+            firebase_service.log_activity(
+                event_type="NEED_REPORTED",
+                title=f"New {need_type.title()} Need",
+                description=f"{props.get('description', '')[:80]}{'...' if len(props.get('description', '')) > 80 else ''}",
+                metadata={
+                    "need_id": need_id,
+                    "urgency_score": urgency,
+                    "location": location_name,
+                    "type": need_type,
+                }
+            )
             
         return need_id
     except Exception as e:

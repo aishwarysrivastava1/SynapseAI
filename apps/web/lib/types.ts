@@ -79,3 +79,25 @@ export interface Notification {
   read: boolean;
 }
 
+export interface FirestoreNeed {
+  id: string;
+  type: string;
+  sub_type: string;
+  description: string;
+  urgency_score: number;
+  population_affected: number;
+  status: "PENDING" | "CLAIMED" | "RESOLVED";
+  location: { lat: number; lng: number; name: string };
+  reported_at: any;
+  tasks_spawned: number;
+}
+
+export interface ActivityEvent {
+  id: string;
+  type: "NEED_REPORTED" | "TASK_ASSIGNED" | "TASK_VERIFIED" | "VOLUNTEER_JOINED" | string;
+  title: string;
+  description: string;
+  timestamp: any;
+  metadata?: Record<string, any>;
+}
+
