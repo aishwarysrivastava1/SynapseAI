@@ -76,7 +76,8 @@ export default function StatsBar({ needs, vols }: { needs: NeedNode[]; vols: any
         return (
           <div
             key={i}
-            className={`flex-1 bg-white border ${c.border} rounded-xl px-4 py-3 shadow-sm hover:shadow-md transition-all flex flex-col gap-1.5`}
+            style={{ animationDelay: `${i * 60}ms` }}
+            className={`flex-1 bg-white border ${c.border} rounded-xl px-4 py-3 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col gap-1.5 animate-slide-up opacity-0 [animation-fill-mode:forwards]`}
           >
             <div className="flex items-center justify-between">
               <div className={`${c.iconBg} p-1.5 rounded-lg`}>

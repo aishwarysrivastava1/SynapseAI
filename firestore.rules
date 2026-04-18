@@ -1,13 +1,20 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+<<<<<<< HEAD
 
     match /tasks/{taskId} {
       allow read:  if request.auth != null;
+=======
+    match /tasks/{taskID} {
+      allow read: if request.auth != null;
+>>>>>>> b6fd2f7 (Major UI and functionality upgrade)
       allow write: if request.auth != null;
     }
 
     match /volunteers/{volId} {
+<<<<<<< HEAD
       allow read:  if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == volId;
     }
@@ -26,5 +33,14 @@ service cloud.firestore {
       allow read:  if request.auth != null;
       allow write: if false; // written only by backend
     }
+=======
+   		allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == volId;
+  	}
+    match /needs/{needId} {
+   		allow read: if request.auth != null;
+      allow write: if request.auth != null;
+  	}
+>>>>>>> b6fd2f7 (Major UI and functionality upgrade)
   }
 }

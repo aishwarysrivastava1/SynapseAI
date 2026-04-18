@@ -4,6 +4,7 @@
 
 /* ── Light mode tokens ─────────────────────────────── */
 :root {
+<<<<<<< HEAD
   --brand-primary:   #115E54;
   --brand-secondary: #2A8256;
   --brand-accent:    #48A15E;
@@ -30,6 +31,23 @@
   --bg-muted:   #1f2937;
 
   color-scheme: dark;
+=======
+  --brand-primary:      #115E54;
+  --brand-secondary:    #2A8256;
+  --brand-accent:       #48A15E;
+  --brand-light:        #95C78F;
+  --brand-bg:           #F5F6F1;
+  --text-primary:       #111827;
+  --text-secondary:     #6B7280;
+  --border-color:       #E5E7EB;
+  /* New design system */
+  --bg-brand-darkest:   #0B3D36;
+  --bg-brand-primary:   #115E54;
+  --brand-accent-core:  #2A8256;
+  --brand-accent-light: #48A15E;
+  --brand-success:      #95C78F;
+  --bg-canvas:          #F5F6F1;
+>>>>>>> b6fd2f7 (Major UI and functionality upgrade)
 }
 
 body {
@@ -146,7 +164,18 @@ body {
 }
 .animate-slide-up { animation: slide-up 0.5s ease-out both; }
 
+<<<<<<< HEAD
 /* ── Stagger helpers ────────────────────────────────── */
+=======
+/* ── Slide-in from left (sidebar open) ─────────── */
+@keyframes slide-in-left {
+  from { transform: translateX(-16px); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+.animate-slide-in-left { animation: slide-in-left 0.22s ease-out both; }
+
+/* ── Stagger helpers ────────────────────────────── */
+>>>>>>> b6fd2f7 (Major UI and functionality upgrade)
 .delay-100 { animation-delay: 0.1s; }
 .delay-200 { animation-delay: 0.2s; }
 .delay-300 { animation-delay: 0.3s; }

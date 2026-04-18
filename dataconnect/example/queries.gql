@@ -1,0 +1,34 @@
+query PublicPosts @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  posts {
+    id
+    title
+    content
+    createdAt
+    author {
+      displayName
+    }
+  }
+}
+
+query MyProfile @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users.") {
+  users(where: {uid: {eq_expr: "auth.uid"}}) {
+    uid
+    displayName
+    email
+  }
+}
+
+mutation CreatePost($title: String!, $content: String!) @auth(level: USER) {
+  post_insert(data: {
+    title: $title,
+    content: $content,
+    authorUid_expr: "auth.uid"
+  })
+}
+
+mutation UpdateMyPost($id: ID!, $title: String, $content: String) @auth(level: USER) {
+  post_update(key: {id: $id}, data: {
+    title: $title,
+    content: $content
+  }, where: {authorUid: {eq_expr: "auth.uid"}})
+}

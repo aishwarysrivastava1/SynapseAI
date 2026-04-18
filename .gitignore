@@ -5,7 +5,9 @@
 .env.development.local
 .env.test.local
 .env.production.local
-*.env
+**/.env
+**/.env.local
+**/.env.*.local
 
 # ─── Node / Next.js ───────────────────────────────────────────────────────────
 node_modules/
@@ -25,16 +27,16 @@ __pycache__/
 venv/
 .venv/
 env/
-.env/
 *.egg-info/
 dist/
 build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# ─── Docker ───────────────────────────────────────────────────────────────────
-.dockerignore
+coverage/
+htmlcov/
+.coverage
+*.cover
 
 # ─── OS / Editor ──────────────────────────────────────────────────────────────
 .DS_Store
@@ -58,9 +60,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ─── AI Assistant internals ───────────────────────────────────────────────────
+.claude/
+.gemini/
+
 # ─── Placeholder / stub apps ──────────────────────────────────────────────────
 apps/dashboard/
 apps/volunteer/
-
-# ─── Claude Code internal ─────────────────────────────────────────────────────
-.claude/

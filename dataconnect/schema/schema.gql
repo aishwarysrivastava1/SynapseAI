@@ -1,0 +1,57 @@
+type User @table {
+  displayName: String!
+  email: String!
+  role: String!
+  createdAt: Timestamp!
+  photoUrl: String
+  location: String
+}
+
+type Skill @table {
+  name: String!
+  createdAt: Timestamp!
+  description: String
+}
+
+type VolunteerSkill @table(key: ["user", "skill"]) {
+  user: User!
+  skill: Skill!
+  skillLevel: String!
+}
+
+type Task @table {
+  title: String!
+  description: String!
+  urgencyScore: Int!
+  status: String!
+  createdAt: Timestamp!
+  assignedVolunteer: User
+  dueAt: Timestamp
+}
+
+type TaskSkill @table(key: ["task", "skill"]) {
+  task: Task!
+  skill: Skill!
+  requiredLevel: String!
+}
+
+type Report @table {
+  reportType: String!
+  content: String!
+  location: String!
+  createdAt: Timestamp!
+  extractedNeeds: String
+  extractedSkills: String
+  urgencyScore: Int
+}
+
+type TaskProof @table {
+  task: Task!
+  user: User!
+  photoUrl: String!
+  gpsCoordinates: String!
+  submittedAt: Timestamp!
+  verified: Boolean!
+  verifier: User
+  notes: String
+}

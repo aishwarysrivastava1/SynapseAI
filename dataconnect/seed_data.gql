@@ -1,0 +1,30 @@
+mutation CreateSeedData @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public for initial data seeding.") @transaction {
+  product_insertMany(data: [
+    {
+      id: "prod-001",
+      name: "Awesome Widget",
+      description: "A fantastic device for all your needs.",
+      price: 19.99
+    },
+    {
+      id: "prod-002",
+      name: "Super Gadget",
+      description: "Enhance your daily life with this gadget.",
+      price: 99.00
+    }
+  ])
+  review_insertMany(data: [
+    {
+      id: "review-001",
+      productId: "prod-001",
+      rating: 5,
+      comment: "Absolutely love this widget!"
+    },
+    {
+      id: "review-002",
+      productId: "prod-002",
+      rating: 4,
+      comment: "Great gadget, a bit pricey but worth it."
+    }
+  ])
+}

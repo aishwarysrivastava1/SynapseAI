@@ -1,39 +1,45 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-// Routes open to everyone (unauthenticated OK)
-const PUBLIC_PATHS = ["/", "/login", "/select-role", "/public"];
+function withSecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  return res;
+}
 
-// NGO-only entry point
-export const NGO_PATHS = ["/ngo-dashboard"];
+export function middleware(req: NextRequest) {
+  const path  = req.nextUrl.pathname;
+  const token = req.cookies.get("ngo_token")?.value;
 
-// Volunteer-only entry points
-export const VOLUNTEER_PATHS = ["/volunteer-dashboard", "/feed", "/leaderboard", "/profile", "/task"];
-
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Pass through Next.js internals, API routes, and static files
-  if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/logo") ||
-    pathname.includes(".")
-  ) {
-    return NextResponse.next();
+  if (!path.startsWith("/ngo") && !path.startsWith("/vol")) {
+    return withSecurityHeaders(NextResponse.next());
   }
 
-  // Public paths — always allow
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
-    return NextResponse.next();
+  if (!token) {
+    return withSecurityHeaders(NextResponse.redirect(new URL("/", req.url)));
   }
 
-  // Role enforcement is handled client-side via RoleGuard components.
-  // Firebase auth state is not available at the Next.js edge without session cookies.
-  // This middleware defines the route structure; RoleGuard enforces access control.
-  return NextResponse.next();
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    if (Date.now() >= payload.exp * 1000) {
+      return withSecurityHeaders(NextResponse.redirect(new URL("/", req.url)));
+    }
+    if (path.startsWith("/ngo") && payload.role !== "ngo_admin") {
+      return withSecurityHeaders(NextResponse.redirect(new URL("/vol/dashboard", req.url)));
+    }
+    if (path.startsWith("/vol") && payload.role !== "volunteer") {
+      return withSecurityHeaders(NextResponse.redirect(new URL("/ngo/dashboard", req.url)));
+    }
+    if (path.startsWith("/ngo") && !path.startsWith("/ngo/setup") && !payload.ngo_id) {
+      return withSecurityHeaders(NextResponse.redirect(new URL("/ngo/setup", req.url)));
+    }
+  } catch {
+    return withSecurityHeaders(NextResponse.redirect(new URL("/", req.url)));
+  }
+
+  return withSecurityHeaders(NextResponse.next());
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/ngo/:path*", "/vol/:path*"],
 };
