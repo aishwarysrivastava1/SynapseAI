@@ -2,10 +2,66 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import os
 import json
+import base64
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_service_account_json(raw: str) -> dict | None:
+    """
+    Robustly parse FIREBASE_SERVICE_ACCOUNT_JSON from Render / Railway / Vercel.
+
+    Platforms differ in how they store the value:
+      1. Valid JSON pasted directly                → json.loads() works
+      2. JSON with double-escaped newlines         → replace \\n → \n in private_key
+      3. Base64-encoded JSON                       → base64 decode first
+      4. JSON wrapped in single quotes             → strip outer quotes
+
+    Returns the parsed dict or None on failure.
+    """
+    candidates = [raw]
+
+    # Strip surrounding single or double quotes added by some platforms
+    stripped = raw.strip().strip("'\"")
+    if stripped != raw:
+        candidates.append(stripped)
+
+    # Try base64 decode
+    try:
+        decoded = base64.b64decode(raw).decode("utf-8")
+        candidates.append(decoded)
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        # Attempt 1: direct parse
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt 2: fix double-escaped newlines in private_key
+        # Render sometimes stores \n as the two characters \ and n
+        try:
+            fixed = candidate.replace("\\\\n", "\\n")
+            result = json.loads(fixed)
+            return result
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt 3: replace literal \n outside JSON string context
+        # (env var pasted with real newlines replaced by spaces)
+        try:
+            fixed = candidate.replace("\r\n", "\\n").replace("\r", "\\n")
+            result = json.loads(fixed)
+            return result
+        except json.JSONDecodeError:
+            pass
+
+    return None
+
 
 class FirebaseService:
     def __init__(self):
@@ -19,16 +75,20 @@ class FirebaseService:
                 if not service_account_json:
                     logger.error("FIREBASE_SERVICE_ACCOUNT_JSON not found in environment variables.")
                     return
+                cred_dict = _parse_service_account_json(service_account_json)
+                if cred_dict is None:
+                    logger.error(
+                        "Could not parse FIREBASE_SERVICE_ACCOUNT_JSON. "
+                        "Paste the raw JSON value in Render — do not add extra quotes. "
+                        "Alternatively, base64-encode the JSON and paste the encoded string."
+                    )
+                    return
                 try:
-                    cred_dict = json.loads(service_account_json)
                     cred = credentials.Certificate(cred_dict)
                     firebase_admin.initialize_app(cred)
                     logger.info(f"Firebase Admin initialized for project: {cred_dict.get('project_id')}")
-                except json.JSONDecodeError as je:
-                    logger.error(f"Invalid JSON format for FIREBASE_SERVICE_ACCOUNT_JSON: {je}")
-                    return
                 except Exception as e:
-                    logger.error(f"Secondary Firebase initialization error: {e}")
+                    logger.error(f"Firebase initialization error: {e}")
                     return
 
             self.db = firestore.client()

@@ -12,7 +12,8 @@ scikit-learn==1.5.0
 numpy==2.1.0
 httpx==0.27.0
 twilio==9.3.0
-pydantic==2.9.0
+pydantic[email]==2.9.0
+email-validator==2.2.0
 python-multipart==0.0.12
 python-dotenv==1.0.0
 # ── NGO multi-tenancy layer ──────────────────────────────────────────────────
