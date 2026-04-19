@@ -58,8 +58,8 @@ export default function NGOSetupPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo/logo-icon.png" alt="SynapseAI" style={{ height: 48, width: 48, objectFit: "contain", margin: "0 auto 12px" }} />
-          <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: "-0.3px" }}>SynapseAI</h1>
+          <img src="/logo/logo-icon.png" alt="Sanchaalan Saathi" style={{ height: 48, width: 48, objectFit: "contain", margin: "0 auto 12px" }} />
+          <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 700, margin: 0, letterSpacing: "-0.3px" }}>Sanchaalan Saathi</h1>
           <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, margin: "4px 0 0" }}>One last step — set up your organisation</p>
         </div>
 

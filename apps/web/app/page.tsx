@@ -3,7 +3,10 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { useNGOAuth } from "@/lib/ngo-auth";
+import { useAuth } from "@/lib/auth";
+import { signInWithGoogle as firebaseSignIn, logoutUser } from "@/lib/firebase-auth";
+import { api } from "@/lib/ngo-api";
+import UserProfile from "@/components/auth/UserProfile";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -80,19 +83,19 @@ const PARTICLES = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, loading, loginWithGoogle } = useNGOAuth();
+  const { user: fbUser, role: userRole, loading } = useAuth();
   const [role, setRole]             = useState<"ngo_admin" | "volunteer">("ngo_admin");
   const [authMode, setAuthMode]     = useState<"login" | "signup">("login");
   const [inviteCode, setInviteCode] = useState("");
   const [busy, setBusy]             = useState(false);
   const [error, setError]           = useState("");
 
+  // Redirect already-authenticated users
   useEffect(() => {
-    if (loading || !user) return;
-    if (user.needs_ngo_setup) router.replace("/ngo/setup");
-    else if (user.role === "ngo_admin") router.replace("/ngo/dashboard");
-    else router.replace("/vol/dashboard");
-  }, [user, loading, router]);
+    if (loading || !fbUser) return;
+    if (userRole === "NGO") router.replace("/ngo/dashboard");
+    else if (userRole === "Volunteer") router.replace("/vol/dashboard");
+  }, [fbUser, userRole, loading, router]);
 
   const handleGoogle = async () => {
     if (role === "volunteer" && !inviteCode.trim()) {
@@ -102,12 +105,40 @@ export default function LoginPage() {
     setError("");
     setBusy(true);
     try {
-      const u = await loginWithGoogle(role, role === "volunteer" ? inviteCode.trim() : undefined);
-      if (u.needs_ngo_setup) router.replace("/ngo/setup");
-      else if (u.role === "ngo_admin") router.replace("/ngo/dashboard");
-      else router.replace("/vol/dashboard");
+      const firebaseUser = await firebaseSignIn();
+
+      // Backend bridge — seed ngo_token for portal layouts
+      try {
+        const data = await api.googleAuth({
+          email: firebaseUser.email!,
+          firebase_uid: firebaseUser.uid,
+          role,
+          invite_code: role === "volunteer" ? inviteCode.trim() || undefined : undefined,
+        });
+        localStorage.setItem("ngo_token", data.token);
+        document.cookie = `ngo_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Strict${location.protocol === "https:" ? "; Secure" : ""}`;
+        if (data.needs_ngo_setup) {
+          router.replace("/ngo/setup");
+        } else if (role === "ngo_admin") {
+          router.replace("/ngo/dashboard");
+        } else {
+          router.replace("/vol/dashboard");
+        }
+      } catch {
+        // Backend bridge failed — redirect based on Firebase auth
+        router.replace(role === "ngo_admin" ? "/ngo/dashboard" : "/vol/dashboard");
+      }
     } catch (e: unknown) {
-      setError((e as Error).message || "Sign-in failed. Please try again.");
+      const code = (e as { code?: string })?.code ?? "";
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        setError("Sign-in was cancelled.");
+      } else if (code === "auth/popup-blocked") {
+        setError("Popup blocked — allow popups for this site and try again.");
+      } else if (code === "auth/unauthorized-domain") {
+        setError("This domain is not authorised in Firebase. Add it under Authentication → Settings → Authorised domains.");
+      } else {
+        setError((e as Error).message || "Sign-in failed. Please try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -119,7 +150,7 @@ export default function LoginPage() {
     setInviteCode("");
   };
 
-  if (loading || user) {
+  if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: "#0B3D36", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ display: "flex", gap: 6 }}>
@@ -128,6 +159,24 @@ export default function LoginPage() {
               style={{ width: 8, height: 8, borderRadius: 4, background: "#48A15E" }} />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (fbUser) {
+    return (
+      <div style={{ minHeight: "100vh", background: "radial-gradient(ellipse at 30% 0%, #1a5e52 0%, #0B3D36 50%, #072921 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          style={{ width: "100%", maxWidth: 420, background: "rgba(255,255,255,0.06)", backdropFilter: "blur(24px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: "28px 32px", boxShadow: "0 32px 72px rgba(0,0,0,0.45)" }}
+        >
+          <UserProfile user={fbUser} onLogout={logoutUser} />
+          <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, textAlign: "center", marginTop: 18 }}>
+            Redirecting to your dashboard…
+          </p>
+        </motion.div>
       </div>
     );
   }
@@ -170,9 +219,9 @@ export default function LoginPage() {
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }}
             style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 64 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo/logo-icon.png" alt="SynapseAI" style={{ height: 40, width: 40, objectFit: "contain" }} />
+            <img src="/logo/logo-icon.png" alt="Sanchaalan Saathi" style={{ height: 40, width: 40, objectFit: "contain" }} />
             <div>
-              <p style={{ color: "#fff", fontWeight: 700, fontSize: 18, margin: 0, letterSpacing: "-0.3px" }}>SynapseAI</p>
+              <p style={{ color: "#fff", fontWeight: 700, fontSize: 18, margin: 0, letterSpacing: "-0.3px" }}>Sanchaalan Saathi</p>
               <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, margin: 0, fontWeight: 500 }}>NGO Coordination Platform</p>
             </div>
           </motion.div>
@@ -235,9 +284,9 @@ export default function LoginPage() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mobile-logo"
           style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 36 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo/logo-icon.png" alt="SynapseAI" style={{ height: 36, width: 36, objectFit: "contain" }} />
+          <img src="/logo/logo-icon.png" alt="Sanchaalan Saathi" style={{ height: 36, width: 36, objectFit: "contain" }} />
           <div>
-            <p style={{ color: "#fff", fontWeight: 700, fontSize: 16, margin: 0 }}>SynapseAI</p>
+            <p style={{ color: "#fff", fontWeight: 700, fontSize: 16, margin: 0 }}>Sanchaalan Saathi</p>
             <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 11, margin: 0 }}>NGO Coordination Platform</p>
           </div>
         </motion.div>
@@ -462,7 +511,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p style={{ color: "rgba(255,255,255,0.18)", fontSize: 11, marginTop: 28, position: "relative", zIndex: 1 }}>
-          © 2025 SynapseAI — Built for NGOs
+          © 2025 Sanchaalan Saathi — Built for NGOs
         </p>
       </div>
 

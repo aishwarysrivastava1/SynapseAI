@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SynapseAI Backend",
+    title="Sanchaalan Saathi Backend",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -52,7 +52,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "synapse-ai-backend"}
+    return {"status": "ok", "service": "sanchaalan-saathi-backend"}
 
 
 # ── Existing intelligence routes (Neo4j / Gemini) ────────────────────────────
