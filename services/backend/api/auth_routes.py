@@ -1,6 +1,9 @@
 import random
 import string
+import logging
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -125,6 +128,16 @@ async def login(req: LoginReq, db: AsyncSession = Depends(get_db)):
 @router.post("/google")
 async def google_auth(req: GoogleAuthReq, db: AsyncSession = Depends(get_db)):
     """Google Sign-In: find or create user by email, return JWT. No password needed."""
+    try:
+        return await _google_auth_inner(req, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("google_auth unexpected error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=503, detail=f"Service unavailable: {exc}")
+
+
+async def _google_auth_inner(req: GoogleAuthReq, db: AsyncSession):
     user = (await db.execute(select(User).where(User.email == req.email))).scalar_one_or_none()
 
     if user:
