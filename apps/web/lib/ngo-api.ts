@@ -1,6 +1,7 @@
 import type { AuthResponse, TaskResponse, VolunteerProfileResponse } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const DEFAULT_TIMEOUT = 30000; // 30 seconds
 
 type GoogleAuthBody = { email: string; firebase_uid: string; role: string; invite_code?: string };
 
@@ -15,6 +16,8 @@ export function friendlyError(e: unknown): string {
     return "Cannot reach server. Check your connection and try again.";
   if (msg.includes("401") || msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("not authenticated"))
     return "Session expired. Please sign in again.";
+  if (msg.includes("429") || msg.toLowerCase().includes("too many requests") || msg.toLowerCase().includes("throttled"))
+    return "System is busy. Please wait a moment before trying again.";
   if (msg.includes("403") || msg.toLowerCase().includes("forbidden") || msg.toLowerCase().includes("permission"))
     return "You don't have permission to do that.";
   if (msg.includes("404") || msg.toLowerCase().includes("not found"))
@@ -23,14 +26,17 @@ export function friendlyError(e: unknown): string {
     return "Invalid or expired invite code. Ask your NGO admin for a new one.";
   if (msg.includes("500") || msg.includes("503") || msg.toLowerCase().includes("server error") || msg.toLowerCase().includes("database"))
     return "Something went wrong on our end. Please try again shortly.";
-  // Short, human-readable messages from backend are OK to show as-is (e.g. validation errors)
   if (msg.length <= 120 && !msg.includes("Traceback") && !msg.includes("sqlalchemy") && !msg.includes("asyncpg"))
     return msg;
   return "Something went wrong. Please try again.";
 }
 
 function authHeaders(token: string): HeadersInit {
-  return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  return { 
+    Authorization: `Bearer ${token}`, 
+    "Content-Type": "application/json",
+    "X-Request-ID": crypto.randomUUID(),
+  };
 }
 
 async function handleRes<T>(res: Response): Promise<T> {
@@ -41,12 +47,53 @@ async function handleRes<T>(res: Response): Promise<T> {
   return res.json();
 }
 
+/** 
+ * Centralized, fault-tolerant fetch with:
+ * 1. Hardware-enforced timeout (AbortController)
+ * 2. Exponential backoff retries for transient errors (500s, 429s)
+ * 3. Network fault detection
+ */
+async function fetchSafe(url: string, init?: RequestInit, opts: { attempts?: number; timeoutMs?: number } = {}): Promise<Response> {
+  const attempts = opts.attempts ?? 3;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
+  const backoff = [800, 1600, 3200];
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      // Retry on internal server errors or rate limits
+      if (res.status >= 500 || res.status === 429) {
+        lastError = new Error(`Server returned ${res.status}`);
+      } else {
+        return res;
+      }
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      lastError = e;
+      if (e.name === "AbortError") {
+        lastError = new Error(`Request timed out after ${timeoutMs}ms`);
+      }
+    }
+
+    if (attempt < attempts) {
+      await sleep(backoff[attempt - 1]);
+    }
+  }
+  throw lastError;
+}
+
 export async function ngoGet<T>(path: string, token: string): Promise<T> {
-  return handleRes<T>(await fetch(`${BASE}${path}`, { headers: authHeaders(token) }));
+  return handleRes<T>(await fetchSafe(`${BASE}${path}`, { headers: authHeaders(token) }));
 }
 
 export async function ngoPost<T>(path: string, token: string, body?: unknown): Promise<T> {
-  return handleRes<T>(await fetch(`${BASE}${path}`, {
+  return handleRes<T>(await fetchSafe(`${BASE}${path}`, {
     method: "POST",
     headers: authHeaders(token),
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -54,7 +101,7 @@ export async function ngoPost<T>(path: string, token: string, body?: unknown): P
 }
 
 export async function ngoPut<T>(path: string, token: string, body: unknown): Promise<T> {
-  return handleRes<T>(await fetch(`${BASE}${path}`, {
+  return handleRes<T>(await fetchSafe(`${BASE}${path}`, {
     method: "PUT",
     headers: authHeaders(token),
     body: JSON.stringify(body),
@@ -62,7 +109,7 @@ export async function ngoPut<T>(path: string, token: string, body: unknown): Pro
 }
 
 export async function ngoDelete<T>(path: string, token: string): Promise<T> {
-  return handleRes<T>(await fetch(`${BASE}${path}`, {
+  return handleRes<T>(await fetchSafe(`${BASE}${path}`, {
     method: "DELETE",
     headers: authHeaders(token),
   }));
@@ -111,6 +158,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(handleRes<AuthResponse>),
+
+  chatbotProxy: (token: string | null, body: any) =>
+    fetch(`${BASE}/api/chatbot`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    }),
 
   guestAuth: (): Promise<AuthResponse> =>
     fetch(`${BASE}/api/auth/guest`, {

@@ -4,7 +4,14 @@ import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/synapseai")
 
-engine = create_async_engine(DATABASE_URL, echo=False, pool_size=10, max_overflow=20)
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=False, 
+    pool_size=5, 
+    max_overflow=10,
+    pool_recycle=300, # Prevents stale connections common in serverless environments
+    pool_pre_ping=True # Verifies connection before providing it to the session
+)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

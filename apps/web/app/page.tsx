@@ -142,16 +142,12 @@ function Particle({ x, y, size, delay, isDark }: { x: number; y: number; size: n
       }}
       animate={{ 
         x: mousePos.x,
-        y: [
-          mousePos.y + (Math.sin(Date.now() / 1000) * 10),
-          mousePos.y + (Math.sin(Date.now() / 1000) * 10) - 18,
-          mousePos.y + (Math.sin(Date.now() / 1000) * 10)
-        ],
+        y: [mousePos.y, mousePos.y - (18 + delay * 2), mousePos.y],
         opacity: [0.25, 0.6, 0.25] 
       }}
       transition={{ 
         x: { type: "spring", damping: 30, stiffness: 50 },
-        y: { type: "spring", damping: 30, stiffness: 50 },
+        y: { duration: 3 + delay, repeat: Infinity, delay, ease: "easeInOut" },
         opacity: { duration: 5 + delay, repeat: Infinity, delay, ease: "easeInOut" }
       }}
     />

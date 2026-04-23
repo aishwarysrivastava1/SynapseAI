@@ -308,58 +308,110 @@ export function ChatbotWidget() {
       context.assignmentId  = selectedTask.assignment_id;
     }
 
+    const consentAccepted = typeof window !== "undefined" && localStorage.getItem("cookie_consent") === "accepted";
+    context.consent = consentAccepted;
+
     try {
-      const res = await fetch("/api/chatbot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMsg.text,
-          imageBase64,
-          imageMimeType,
-          history: history.slice(-14),
-          context,
-        }),
+      const res = await api.chatbotProxy(userCtx.token, {
+        message: userMsg.text,
+        imageBase64,
+        imageMimeType,
+        context,
       });
 
-      const data = await res.json();
+      if (!res.body) throw new Error("No body returned");
 
-      // Separate destructive calls (completeAssignment) from info calls
-      const safeCalls = (data.calls ?? []).filter(
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let completeText = "";
+      let finalAction: any = { type: "none" };
+      let finalCalls: any[] = [];
+      let finalSuggestions: any[] = [];
+      
+      // Initialize an empty bot message placeholder
+      const botMsgId = `bot-${Date.now()}`;
+      setMessages(prev => [...prev, {
+        id: botMsgId,
+        role: "bot",
+        text: "",
+      }]);
+      setLoading(false); // Stop generic loading, start typing
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunkText = decoder.decode(value, { stream: true });
+        const lines = chunkText.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            if (!dataStr.trim()) continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.error) {
+                 completeText += `\\n\\n[Error: ${parsed.error}]`;
+              }
+              if (parsed.textChunk) {
+                completeText += parsed.textChunk;
+                setMessages(prev => prev.map(m => m.id === botMsgId ? { ...m, text: completeText } : m));
+              }
+              if (parsed.done) {
+                finalAction = parsed.action || finalAction;
+                finalCalls = parsed.calls || finalCalls;
+                finalSuggestions = parsed.suggestions || finalSuggestions;
+              }
+            } catch (e) {
+              console.error("SSE parse error", e, dataStr);
+            }
+          }
+        }
+      }
+
+      // Process complete message
+      const safeCalls = finalCalls.filter(
         (c: any) => !c.method?.includes("complete") && !c.method?.includes("Complete")
       );
-      const destructiveCalls = (data.calls ?? []).filter(
+      const destructiveCalls = finalCalls.filter(
         (c: any) => c.method?.includes("complete") || c.method?.includes("Complete")
       );
 
       const logs = await runCalls(safeCalls);
 
-      // Handle navigate
-      if (data.action?.type === "navigate" && data.action.path) {
-        setTimeout(() => { router.push(data.action.path); setOpen(false); }, 1400);
+      if (finalAction?.type === "navigate" && finalAction.path) {
+        setTimeout(() => { router.push(finalAction.path); setOpen(false); }, 1400);
       }
 
-      const botMsg: Message = {
-        id:          `bot-${Date.now()}`,
-        role:        "bot",
-        text:        data.reply ?? "I've processed your request.",
-        statusLog:   logs.length > 0 ? logs : undefined,
-        isSuccess:   data.action?.task_resolved && destructiveCalls.length === 0,
-        action:      data.action?.type !== "none" ? data.action : undefined,
-        suggestions: data.suggestions?.length ? data.suggestions : undefined,
-        // Hold destructive calls until user confirms
-        pendingCalls: destructiveCalls.length > 0 ? destructiveCalls : undefined,
-      };
-
-      setMessages(prev => [...prev, botMsg]);
+      setMessages(prev => prev.map(m => {
+        if (m.id === botMsgId) {
+          return {
+            ...m,
+            text: completeText || "I've processed your request.",
+            statusLog: logs.length > 0 ? logs : undefined,
+            isSuccess: finalAction?.task_resolved && destructiveCalls.length === 0,
+            action: finalAction?.type !== "none" ? finalAction : undefined,
+            suggestions: finalSuggestions.length ? finalSuggestions : undefined,
+            pendingCalls: destructiveCalls.length > 0 ? destructiveCalls : undefined,
+          };
+        }
+        return m;
+      }));
+      
       setHistory(prev => [
         ...prev,
-        { role: "user",  text: userMsg.text },
-        { role: "model", text: data.reply ?? "" },
+        { role: "user", text: userMsg.text },
+        { role: "model", text: completeText },
       ]);
 
       if (!open) setUnread(u => u + 1);
-    } catch {
-      pushBotMsg("Connection error. Please check your network and try again.");
+    } catch (e) {
+      console.error(e);
+      setMessages(prev => [...prev, {
+        id: `bot-${Date.now()}`,
+        role: "bot",
+        text: "Connection error. Please try again. [Retry supported via resend]",
+      }]);
     } finally {
       setLoading(false);
     }

@@ -297,10 +297,10 @@ export default function DeploymentMap() {
         if (prev.some((op) => op.id === payload.task_id)) return prev;
         return [
           {
-            id: payload.task_id,
+            id: payload.task_id as string,
             title: payload.title || "Task",
-            lat: payload.lat,
-            lng: payload.lng,
+            lat: payload.lat as number,
+            lng: payload.lng as number,
             status: payload.status === "completed" ? "completed" : "active",
             assigned: 0,
             needed: 0,

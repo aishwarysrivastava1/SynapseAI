@@ -330,6 +330,8 @@ async def accept_assignment(
     )).scalar_one_or_none()
     if not a:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    if a.status == "accepted":
+        return {"status": "accepted"}
     if a.status != "assigned":
         raise HTTPException(status_code=400, detail=f"Cannot accept — current status: {a.status}")
 
@@ -365,6 +367,8 @@ async def reject_assignment(
     )).scalar_one_or_none()
     if not a:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    if a.status == "rejected":
+        return {"status": "rejected"}
     if a.status not in ("assigned", "accepted"):
         raise HTTPException(status_code=400, detail=f"Cannot reject — current status: {a.status}")
 
@@ -406,6 +410,8 @@ async def complete_assignment(
     )).scalar_one_or_none()
     if not a:
         raise HTTPException(status_code=404, detail="Assignment not found")
+    if a.status == "completed":
+        return {"status": "completed", "task_completed": True}
     if a.status != "accepted":
         raise HTTPException(status_code=400, detail=f"Cannot complete — current status: {a.status}")
 

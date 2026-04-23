@@ -20,6 +20,8 @@ from api.ngo_admin_routes  import router as ngo_router
 from api.realtime_routes   import router as realtime_router
 from api.vol_mgmt_routes   import router as vol_router
 from api.guest_routes      import router as guest_router
+from api.chatbot_routes    import router as chatbot_router
+from api.metrics_routes    import router as metrics_router
 from services.live_location_cache import live_location_cache
 from services.neo4j_service import neo4j_service
 from db.base import init_db
@@ -71,6 +73,11 @@ from middleware.guest import GuestSessionMiddleware
 app.add_middleware(GuestSessionMiddleware)
 
 
+from fastapi import Depends
+from sqlalchemy import text
+from db.base import get_db, AsyncSession
+from services.chatbot.observability import mask_pii
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.monotonic()
@@ -78,8 +85,10 @@ async def log_requests(request: Request, call_next):
         response = await call_next(request)
     except Exception as exc:
         duration = time.monotonic() - start
+        # Mask PII in exception logs before hitting trace logging
+        safe_exc = mask_pii(str(exc))
         logger.error(
-            f"{request.method} {request.url.path} → 500 ({duration:.3f}s) UNHANDLED: {exc}"
+            f"{request.method} {request.url.path} → 500 ({duration:.3f}s) UNHANDLED: {safe_exc}"
         )
         return JSONResponse({"error": "Internal server error"}, status_code=500)
     duration = time.monotonic() - start
@@ -92,8 +101,21 @@ async def log_requests(request: Request, call_next):
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok", "service": "sanchaalan-saathi-backend"}
+async def health(db: AsyncSession = Depends(get_db)):
+    """Hardened health check for production load balancers."""
+    try:
+        await db.execute(text("SELECT 1"))
+        db_status = "ok"
+    except Exception as e:
+        logger.error(f"PostgreSQL Health Failure: {e}")
+        db_status = "error"
+        
+    return {
+        "status": "healthy" if db_status == "ok" else "degraded",
+        "database": db_status,
+        "service": "sanchaalan-saathi-backend",
+        "version": "2.0.0"
+    }
 
 
 # ── Existing intelligence routes (Neo4j / Gemini) ────────────────────────────
@@ -110,6 +132,8 @@ app.include_router(ngo_router,  prefix="/api/ngo",        tags=["NGO Admin"])
 app.include_router(guest_router, prefix="/api",           tags=["Guest Session"])
 app.include_router(realtime_router, prefix="/api/realtime", tags=["Realtime"])
 app.include_router(vol_router,  prefix="/api/volunteer",  tags=["Volunteer Management"])
+app.include_router(chatbot_router, prefix="/api/chatbot", tags=["Chatbot"])
+app.include_router(metrics_router, prefix="/api/chatbot/metrics", tags=["Chatbot Metrics"])
 
 
 if __name__ == "__main__":

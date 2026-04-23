@@ -283,7 +283,8 @@ class ChatbotSession(Base):
     )
 
     id:          Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_id)
-    user_id:     Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id:     Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    guest_id:    Mapped[str | None] = mapped_column(String(36), ForeignKey("guests.id"), nullable=True)
     ngo_id:      Mapped[str | None] = mapped_column(String(36), ForeignKey("ngos.id"), nullable=True)
     channel:     Mapped[str] = mapped_column(String(40), default="web")
     language:    Mapped[str] = mapped_column(String(32), default="en")
@@ -301,7 +302,8 @@ class ChatbotMessage(Base):
 
     id:          Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_id)
     session_id:  Mapped[str] = mapped_column(String(36), ForeignKey("chatbot_sessions.id"), nullable=False)
-    user_id:     Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    user_id:     Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    guest_id:    Mapped[str | None] = mapped_column(String(36), ForeignKey("guests.id"), nullable=True)
     role:        Mapped[str] = mapped_column(
         SAEnum("user", "assistant", "system", name="chat_role"), nullable=False
     )
@@ -332,3 +334,56 @@ class GuestData(Base):
         DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
     )
 
+class ChatbotSemanticCache(Base):
+    __tablename__ = "chatbot_semantic_cache"
+    __table_args__ = (
+        Index("ix_semantic_cache_hash", "input_hash"),
+        Index("ix_semantic_cache_hits", "hits"),
+        Index("ix_semantic_cache_updated", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_id)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list] = mapped_column(JSON, default=list)
+    action_response: Mapped[dict] = mapped_column(JSON, default=dict)
+    reply_text: Mapped[str] = mapped_column(Text, nullable=False)
+    intent_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+    )
+
+class TokenUsageCounter(Base):
+    __tablename__ = "token_usage_counters"
+    __table_args__ = (
+        Index("ix_token_usage_user", "identifier"),
+        Index("ix_token_usage_date", "date_stamp"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_id)
+    identifier: Mapped[str] = mapped_column(String(100), nullable=False) # user_id or guest_id
+    date_stamp: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    requests_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+    )
+class GlobalResourceCounter(Base):
+    __tablename__ = "global_resource_counters"
+    __table_args__ = (
+        UniqueConstraint('resource_key', 'timestamp_minute', name='uq_res_ts'),
+        Index("ix_global_res_ts", "timestamp_minute"),
+        Index("ix_global_res_expires", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_id)
+    resource_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    timestamp_minute: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, index=True)
+    current_value: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+    )

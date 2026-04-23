@@ -4,11 +4,7 @@ import { verifyFirebaseToken, requireAuth } from '@/lib/verify-auth';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const genAI = new GoogleGenerativeAI(process.env.GEM_KEY || '');
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? (
-  process.env.NODE_ENV === 'production'
-    ? (() => { throw new Error('NEXT_PUBLIC_BACKEND_URL is not set'); })()
-    : 'http://localhost:8000'
-);
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
 const MAX_NEED_IDS = 20;
 

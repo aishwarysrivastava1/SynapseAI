@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from utils.auth_utils import decode_token
@@ -46,6 +47,23 @@ def require_volunteer(user: CurrentUser = Depends(get_current_user)) -> CurrentU
     if not user.ngo_id:
         raise HTTPException(status_code=403, detail="Volunteer NGO not configured")
     return user
+
+
+def get_current_user_or_none(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+) -> Optional[CurrentUser]:
+    if not creds:
+        return None
+    try:
+        payload = decode_token(creds.credentials)
+        return CurrentUser(
+            user_id=payload["sub"],
+            role=payload["role"],
+            ngo_id=payload.get("ngo_id"),
+            email=payload.get("email", ""),
+        )
+    except Exception:
+        return None
 
 
 def assert_same_ngo(resource_ngo_id: str, user: CurrentUser) -> None:
