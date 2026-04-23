@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/graph/update-node`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10000),
         body: JSON.stringify({
           nodeType: "Volunteer",
           nodeId: data.neoId,

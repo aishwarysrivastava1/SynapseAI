@@ -1,4 +1,5 @@
 import { NeedNode, HotspotResult, SimulationComparison } from "./types";
+import { fetchSafe, friendlyError } from "./ngo-api";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -34,8 +35,8 @@ export async function fetchNeeds(status?: string, type?: string): Promise<NeedNo
     if (status) params.append("status", status);
     if (type) params.append("type", type);
     
-    const res = await fetch(`${API_BASE}/api/graph/needs?${params.toString()}`);
-    if (!res.ok) throw new Error("Failed to fetch needs");
+    const res = await fetchSafe(`${API_BASE}/api/graph/needs?${params.toString()}`);
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     
     const data = await res.json();
     return data.needs.map((item: any) => ({
@@ -50,8 +51,8 @@ export async function fetchNeeds(status?: string, type?: string): Promise<NeedNo
 
 export async function fetchVolunteers() {
   try {
-    const res = await fetch(`${API_BASE}/api/graph/volunteers`);
-    if (!res.ok) throw new Error("Failed to fetch volunteers");
+    const res = await fetchSafe(`${API_BASE}/api/graph/volunteers`);
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     const data = await res.json();
     // Neo4j RETURN v, collect(s), l → each row is {v: {...props}, skills: [...], l: {...}}
     // Normalize so components can use vol.availabilityStatus, vol.location.lat, etc.
@@ -68,12 +69,12 @@ export async function fetchVolunteers() {
 
 export async function createVolunteer(data: any): Promise<any> {
     try {
-        const res = await fetch(`${API_BASE}/api/volunteers`, {
+        const res = await fetchSafe(`${API_BASE}/api/volunteers`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error("Failed to create volunteer");
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
         return res.json();
     } catch (error) {
         handleApiError(error, "createVolunteer");
@@ -83,8 +84,8 @@ export async function createVolunteer(data: any): Promise<any> {
 
 export async function fetchHotspots(): Promise<HotspotResult[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/graph/hotspots`);
-    if (!res.ok) throw new Error("Failed to fetch hotspots");
+    const res = await fetchSafe(`${API_BASE}/api/graph/hotspots`);
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     const data = await res.json();
     return data.hotspots;
   } catch (error) {
@@ -96,12 +97,12 @@ export async function fetchHotspots(): Promise<HotspotResult[]> {
 export async function askGraphIntelligence(query: string) {
   try {
     const safeQuery = sanitizeInput(query);
-    const res = await fetch(`${API_BASE}/api/graph/ask`, {
+    const res = await fetchSafe(`${API_BASE}/api/graph/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: safeQuery })
     });
-    if (!res.ok) throw new Error("Graph intelligence query failed");
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     return res.json();
   } catch (error) {
     handleApiError(error, "askGraphIntelligence");
@@ -115,10 +116,10 @@ export async function askGraphIntelligence(query: string) {
 
 export async function runComparisonSim(steps: number = 100): Promise<SimulationComparison | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/sim/compare?steps=${steps}`, {
+    const res = await fetchSafe(`${API_BASE}/api/sim/compare?steps=${steps}`, {
       method: "POST"
     });
-    if (!res.ok) throw new Error("Simulation comparison failed");
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     return res.json();
   } catch (error) {
     handleApiError(error, "runComparisonSim");
@@ -135,12 +136,12 @@ export async function ingestDocument(file: File) {
     const formData = new FormData();
     formData.append("file", file);
     
-    const res = await fetch(`${API_BASE}/api/ingest/document`, {
+    const res = await fetchSafe(`${API_BASE}/api/ingest/document`, {
       method: "POST",
       body: formData,
     });
     
-    if (!res.ok) throw new Error("Document ingestion failed");
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     return res.json();
   } catch (error) {
     handleApiError(error, "ingestDocument");
@@ -156,13 +157,13 @@ export async function ingestText(text: string, coords?: { lat: number; lng: numb
       body.lat = coords.lat;
       body.lng = coords.lng;
     }
-    const res = await fetch(`${API_BASE}/api/ingest/text`, {
+    const res = await fetchSafe(`${API_BASE}/api/ingest/text`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
 
-    if (!res.ok) throw new Error("Text ingestion failed");
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
     return res.json();
   } catch (error) {
     handleApiError(error, "ingestText");

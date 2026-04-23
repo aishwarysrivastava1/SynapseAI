@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { api, googleAuthWithRetry } from "./ngo-api";
+import { api, googleAuthWithRetry, friendlyError } from "./ngo-api";
 import { signInWithGoogle as firebaseSignInWithGoogle } from "./firebase-auth";
 import { authErrorMessage, isDismissedPopupError } from "./auth-errors";
 
@@ -67,21 +67,33 @@ export function NGOAuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string): Promise<NGOUser> => {
-    const res = await fetch(`${API}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Login failed");
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Login failed (${res.status})`);
+      }
+      const data = await res.json();
+      localStorage.setItem("ngo_token", data.token);
+      document.cookie = `ngo_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Strict${location.protocol === 'https:' ? '; Secure' : ''}`;
+      const parsed = parseToken(data.token) as NGOUser;
+      setUser(parsed);
+      return parsed;
+    } catch (e: unknown) {
+      clearTimeout(timeoutId);
+      if ((e as { name?: string })?.name === "AbortError") {
+        throw new Error("Login request timed out. Please try again.");
+      }
+      throw e;
     }
-    const data = await res.json();
-    localStorage.setItem("ngo_token", data.token);
-    document.cookie = `ngo_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Strict${location.protocol === 'https:' ? '; Secure' : ''}`;
-    const parsed = parseToken(data.token) as NGOUser;
-    setUser(parsed);
-    return parsed;
   };
 
   const loginWithGoogle = async (role: "ngo_admin" | "volunteer", inviteCode?: string): Promise<NGOUser> => {
@@ -106,11 +118,7 @@ export function NGOAuthProvider({ children }: { children: React.ReactNode }) {
         invite_code: inviteCode,
       });
     } catch (err: unknown) {
-      const msg = (err as Error)?.message ?? "Backend authentication failed.";
-      if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
-        throw new Error("Cannot reach the server. Check NEXT_PUBLIC_BACKEND_URL and ensure the backend is running.");
-      }
-      throw new Error(msg);
+      throw new Error(friendlyError(err));
     }
 
     localStorage.setItem("ngo_token", data.token);

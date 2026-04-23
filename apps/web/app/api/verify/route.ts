@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
             "Content-Type": "application/json",
             ...(serviceSecret ? { "x-service-secret": serviceSecret } : {}),
           },
+          signal: AbortSignal.timeout(10000),
           body: JSON.stringify({
             nodeType: "Task",
             nodeId:   task.neoTaskId,

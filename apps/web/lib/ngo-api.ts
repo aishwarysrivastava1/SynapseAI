@@ -12,20 +12,34 @@ function sleep(ms: number): Promise<void> {
 /** Map any thrown value to a user-friendly message — never show raw backend detail. */
 export function friendlyError(e: unknown): string {
   const msg = (e instanceof Error ? e.message : String(e)) || "";
-  if (!msg || msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("fetch"))
+  const lower = msg.toLowerCase();
+
+  // Network-level failures: only match known browser-native network error patterns
+  if (
+    msg === "Failed to fetch" ||
+    lower.includes("networkerror") ||
+    lower.includes("network request failed") ||
+    lower.includes("net::err_") ||
+    lower.includes("request timed out") ||
+    lower.includes("the internet connection appears to be offline") ||
+    lower.includes("load failed") ||
+    (e instanceof TypeError && !msg)  // TypeError with empty message = fetch network error
+  )
     return "Cannot reach server. Check your connection and try again.";
-  if (msg.includes("401") || msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("not authenticated"))
+  if (msg.includes("401") || lower.includes("unauthorized") || lower.includes("not authenticated"))
     return "Session expired. Please sign in again.";
-  if (msg.includes("429") || msg.toLowerCase().includes("too many requests") || msg.toLowerCase().includes("throttled"))
+  if (msg.includes("429") || lower.includes("too many requests") || lower.includes("throttled"))
     return "System is busy. Please wait a moment before trying again.";
-  if (msg.includes("403") || msg.toLowerCase().includes("forbidden") || msg.toLowerCase().includes("permission"))
+  if (msg.includes("403") || lower.includes("forbidden") || lower.includes("permission"))
     return "You don't have permission to do that.";
-  if (msg.includes("404") || msg.toLowerCase().includes("not found"))
+  if (msg.includes("404") || lower.includes("not found"))
     return "The requested item was not found.";
-  if (msg.includes("invite") || msg.toLowerCase().includes("invite_code"))
+  if (lower.includes("invite") || lower.includes("invite_code"))
     return "Invalid or expired invite code. Ask your NGO admin for a new one.";
-  if (msg.includes("500") || msg.includes("503") || msg.toLowerCase().includes("server error") || msg.toLowerCase().includes("database"))
+  if (msg.includes("500") || msg.includes("503") || lower.includes("server error") || lower.includes("database") || lower.includes("service unavailable"))
     return "Something went wrong on our end. Please try again shortly.";
+  if (!msg)
+    return "Something went wrong. Please try again.";
   if (msg.length <= 120 && !msg.includes("Traceback") && !msg.includes("sqlalchemy") && !msg.includes("asyncpg"))
     return msg;
   return "Something went wrong. Please try again.";
@@ -53,7 +67,7 @@ async function handleRes<T>(res: Response): Promise<T> {
  * 2. Exponential backoff retries for transient errors (500s, 429s)
  * 3. Network fault detection
  */
-async function fetchSafe(url: string, init?: RequestInit, opts: { attempts?: number; timeoutMs?: number } = {}): Promise<Response> {
+export async function fetchSafe(url: string, init?: RequestInit, opts: { attempts?: number; timeoutMs?: number } = {}): Promise<Response> {
   const attempts = opts.attempts ?? 3;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
   const backoff = [800, 1600, 3200];
@@ -304,7 +318,7 @@ export const api = {
     ngoPut<any>("/api/volunteer/location", token, { lat, lng, share_location: true }),
 
   clearVolLocation: (token: string) =>
-    fetch(`${BASE}/api/volunteer/location`, { method: "DELETE", headers: authHeaders(token) })
+    fetchSafe(`${BASE}/api/volunteer/location`, { method: "DELETE", headers: authHeaders(token) })
       .then(handleRes<any>),
 
   triggerSOS: (token: string, body?: { message?: string; lat?: number; lng?: number }) =>

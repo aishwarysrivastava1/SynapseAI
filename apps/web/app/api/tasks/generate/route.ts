@@ -37,7 +37,9 @@ export async function POST(req: Request) {
 
     const fetchedNeeds: unknown[] = [];
     for (const id of needIds) {
-      const res = await fetch(`${BACKEND_URL}/api/graph/needs/${encodeURIComponent(id)}`);
+      const res = await fetch(`${BACKEND_URL}/api/graph/needs/${encodeURIComponent(id)}`, {
+        signal: AbortSignal.timeout(10000),
+      });
       if (res.ok) fetchedNeeds.push(await res.json());
     }
 
@@ -99,6 +101,7 @@ export async function POST(req: Request) {
       await fetch(`${BACKEND_URL}/api/graph/update-node`, {
         method: 'POST',
         headers: syncHeaders,
+        signal: AbortSignal.timeout(10000),
         body: JSON.stringify({
           nodeType: 'Task',
           nodeId: neoTaskId,

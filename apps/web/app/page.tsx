@@ -154,6 +154,62 @@ function Particle({ x, y, size, delay, isDark }: { x: number; y: number; size: n
   );
 }
 
+function ConnectivityBanner() {
+  const [status, setStatus] = useState<"checking" | "online" | "offline">("checking");
+
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch(`${BACKEND}/health`, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) setStatus("online");
+        else setStatus("offline");
+      } catch {
+        setStatus("offline");
+      }
+    };
+    check();
+    const timer = setInterval(check, 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (status === "online") return null;
+
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      style={{
+        background: status === "checking" ? "#1e293b" : "#7f1d1d",
+        color: "#fff",
+        padding: "8px 24px",
+        fontSize: 12,
+        fontWeight: 600,
+        textAlign: "center",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        position: "relative",
+        zIndex: 200,
+      }}
+    >
+      <div style={{
+        width: 8, height: 8, borderRadius: "50%",
+        background: status === "checking" ? "#94a3b8" : "#f87171",
+        animation: "pulse 2s infinite"
+      }} />
+      {status === "checking" ? "Verifying connection to SynapseAI Intelligence..." : "Cannot reach servers. Please check your connection or wait for maintenance to finish."}
+      <style>{`
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.4; }
+          100% { opacity: 1; }
+        }
+      `}</style>
+    </motion.div>
+  );
+}
+
 // ── Login card ────────────────────────────────────────────────────────────────
 
 function LoginCard({ role, router, isDark }: { role: "ngo_admin" | "volunteer"; router: ReturnType<typeof useRouter>; isDark: boolean }) {
@@ -459,6 +515,7 @@ export default function LandingPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: T.pageBg, fontFamily: "system-ui, -apple-system, sans-serif", overflowX: "hidden" }}>
+      <ConnectivityBanner />
 
       {/* ── 1. NAVBAR ────────────────────────────────────────────────────────── */}
       <nav
