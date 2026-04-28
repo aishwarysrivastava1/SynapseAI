@@ -3,7 +3,33 @@ import type { AuthResponse, TaskResponse, VolunteerProfileResponse } from "./typ
 const BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const DEFAULT_TIMEOUT = 30000;
 
-type GoogleAuthBody = { email: string; firebase_uid: string; role: string; invite_code?: string };
+type GoogleAuthBody = {
+  email: string;
+  firebase_uid: string;
+  role: string;
+  invite_code?: string;
+  full_name?: string;
+  phone?: string;
+  city?: string;
+  preferred_language?: string;
+  communication_opt_in?: boolean;
+  consent_analytics?: boolean;
+  consent_personalization?: boolean;
+  consent_ai_training?: boolean;
+  motivation_statement?: string;
+  languages?: string[];
+  causes_supported?: string[];
+  education_level?: string;
+  years_experience?: number;
+  skills?: string[];
+  bio?: string;
+  date_of_birth?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  preferred_roles?: string[];
+  certifications?: string[];
+  availability_notes?: string;
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -178,12 +204,16 @@ export const api = {
       body: JSON.stringify(body),
     }).then(handleRes<AuthResponse>),
 
-  googleAuth: (body: { email: string; firebase_uid: string; role: string; invite_code?: string }) =>
+  googleAuth: (body: GoogleAuthBody): Promise<AuthResponse> =>
     fetchSafe(`${BASE}/api/auth/google`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(handleRes<AuthResponse>),
+
+  checkEmail: (email: string): Promise<{ exists: boolean; role: string | null; ngo_id: string | null }> =>
+    fetch(`${BASE}/api/auth/check-email?email=${encodeURIComponent(email)}`)
+      .then(res => res.ok ? res.json() : res.json().then((e: { detail?: string }) => { throw new Error(e.detail ?? "check-email failed"); })),
 
   chatbotProxy: (token: string | null, body: any) =>
     fetchSafe(`${BASE}/api/chatbot`, {

@@ -36,7 +36,7 @@ class LruCache:
             del self.cache[key]
 
 # Fast memory mapping to offload DB calls
-_memory_cache = LruCache(max_size:=5000, ttl:=300) 
+_memory_cache = LruCache(capacity=5000, ttl_seconds=300)
 
 class SessionCache:
     """

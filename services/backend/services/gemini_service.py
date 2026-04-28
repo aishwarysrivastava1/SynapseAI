@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Configure Gemini at module load — single point of truth
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
+genai.configure(api_key=os.environ.get("GEM_KEY", ""))
 
 EXTRACTION_PROMPT = """You are a data extraction pipeline for an NGO community intelligence knowledge graph.
 Analyze the input and extract structured entities and relationships.

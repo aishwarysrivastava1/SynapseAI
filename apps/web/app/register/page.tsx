@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { api, friendlyError } from "../../lib/ngo-api";
 import { useNGOAuth } from "../../lib/ngo-auth";
 import { Building2, Users, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -9,121 +10,199 @@ import { motion } from "motion/react";
 
 type Tab = "ngo" | "volunteer";
 
-export default function RegisterPage() {
-  const router  = useRouter();
-  const { setUser } = useNGOAuth();
-  const [tab, setTab]   = useState<Tab>("ngo");
+function RegisterForm() {
+  const router       = useRouter();
+  const { setUser }  = useNGOAuth();
+  const searchParams = useSearchParams();
+
+  const googleMode  = searchParams.get("mode") === "google";
+  const googleEmail = searchParams.get("email") ?? "";
+  const googleUid   = searchParams.get("uid")   ?? "";
+  const googleName  = searchParams.get("name")  ?? "";
+
+  const [tab, setTab]         = useState<Tab>("ngo");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [showPwd, setShowPwd] = useState(false);
 
   // Shared fields
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [email,             setEmail]             = useState(googleMode ? googleEmail : "");
+  const [password,          setPassword]          = useState("");
+  const [fullName,          setFullName]          = useState(googleMode ? googleName : "");
+  const [phone,             setPhone]             = useState("");
   const [preferredLanguage, setPreferredLanguage] = useState("en");
-  const [communicationOptIn, setCommunicationOptIn] = useState(true);
-  const [consentAnalytics, setConsentAnalytics] = useState(true);
+  const [communicationOptIn,     setCommunicationOptIn]     = useState(true);
+  const [consentAnalytics,       setConsentAnalytics]       = useState(true);
   const [consentPersonalization, setConsentPersonalization] = useState(true);
-  const [consentAiTraining, setConsentAiTraining] = useState(false);
+  const [consentAiTraining,      setConsentAiTraining]      = useState(false);
+
   // NGO fields
-  const [ngoName, setNgoName]   = useState("");
-  const [ngoDesc, setNgoDesc]   = useState("");
-  const [ngoSector, setNgoSector] = useState("");
-  const [ngoWebsite, setNgoWebsite] = useState("");
-  const [ngoCity, setNgoCity] = useState("");
-  const [ngoRegions, setNgoRegions] = useState("");
+  const [ngoName,         setNgoName]         = useState("");
+  const [ngoDesc,         setNgoDesc]         = useState("");
+  const [ngoSector,       setNgoSector]       = useState("");
+  const [ngoWebsite,      setNgoWebsite]      = useState("");
+  const [ngoCity,         setNgoCity]         = useState("");
+  const [ngoRegions,      setNgoRegions]      = useState("");
   const [ngoMissionFocus, setNgoMissionFocus] = useState("");
+
   // Volunteer fields
-  const [inviteCode, setInviteCode] = useState("");
-  const [volCity, setVolCity] = useState("");
-  const [volLanguages, setVolLanguages] = useState("");
-  const [volCauses, setVolCauses] = useState("");
-  const [volMotivation, setVolMotivation] = useState("");
-  const [volEducation, setVolEducation] = useState("");
-  const [volYearsExperience, setVolYearsExperience] = useState("");
-  const [volSkills, setVolSkills] = useState("");
-  const [volBio, setVolBio] = useState("");
-  const [volDateOfBirth, setVolDateOfBirth] = useState("");
-  const [volEmergencyName, setVolEmergencyName] = useState("");
-  const [volEmergencyPhone, setVolEmergencyPhone] = useState("");
-  const [volRoles, setVolRoles] = useState("");
-  const [volCertifications, setVolCertifications] = useState("");
+  const [inviteCode,           setInviteCode]           = useState("");
+  const [volCity,              setVolCity]              = useState("");
+  const [volLanguages,         setVolLanguages]         = useState("");
+  const [volCauses,            setVolCauses]            = useState("");
+  const [volMotivation,        setVolMotivation]        = useState("");
+  const [volEducation,         setVolEducation]         = useState("");
+  const [volYearsExperience,   setVolYearsExperience]   = useState("");
+  const [volSkills,            setVolSkills]            = useState("");
+  const [volBio,               setVolBio]               = useState("");
+  const [volDateOfBirth,       setVolDateOfBirth]       = useState("");
+  const [volEmergencyName,     setVolEmergencyName]     = useState("");
+  const [volEmergencyPhone,    setVolEmergencyPhone]    = useState("");
+  const [volRoles,             setVolRoles]             = useState("");
+  const [volCertifications,    setVolCertifications]    = useState("");
   const [volAvailabilityNotes, setVolAvailabilityNotes] = useState("");
 
   const splitCsv = (value: string) =>
     value.split(",").map((x) => x.trim()).filter(Boolean);
+
+  const storeTokenAndRedirect = (
+    token: string,
+    role: "ngo_admin" | "volunteer",
+    ngoId: string | null,
+    emailUsed: string,
+  ) => {
+    localStorage.setItem("ngo_token", token);
+    document.cookie = `ngo_token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Strict${location.protocol === "https:" ? "; Secure" : ""}`;
+    const p = JSON.parse(atob(token.split(".")[1]));
+    setUser({ user_id: p.sub, role, ngo_id: ngoId, email: emailUsed, token });
+    router.push(role === "ngo_admin" ? "/ngo/dashboard" : "/vol/dashboard");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      if (tab === "ngo") {
-        const signup = await api.signup({
-          email,
-          password,
-          role: "ngo_admin",
-          full_name: fullName || undefined,
-          phone: phone || undefined,
-          preferred_language: preferredLanguage,
-          communication_opt_in: communicationOptIn,
-          consent_analytics: consentAnalytics,
-          consent_personalization: consentPersonalization,
-          consent_ai_training: consentAiTraining,
-        });
-        const ngoRes = await api.createNGO(signup.token, {
-          name: ngoName,
-          description: ngoDesc,
-          sector: ngoSector || undefined,
-          website: ngoWebsite || undefined,
-          headquarters_city: ngoCity || undefined,
-          primary_contact_name: fullName || undefined,
-          primary_contact_phone: phone || undefined,
-          operating_regions: splitCsv(ngoRegions),
-          mission_focus: splitCsv(ngoMissionFocus),
-        });
-        localStorage.setItem("ngo_token", ngoRes.token);
-        document.cookie = `ngo_token=${ngoRes.token}; path=/; max-age=${60 * 60 * 24}`;
-        const p = JSON.parse(atob(ngoRes.token.split(".")[1]));
-        setUser({ user_id: p.sub, role: "ngo_admin", ngo_id: p.ngo_id, email, token: ngoRes.token });
-        router.push("/ngo/dashboard");
+      if (googleMode) {
+        // ── Google registration path ────────────────────────────────────
+        if (tab === "ngo") {
+          const authRes = await api.googleAuth({
+            email: googleEmail,
+            firebase_uid: googleUid,
+            role: "ngo_admin",
+            full_name: fullName || undefined,
+            phone: phone || undefined,
+            preferred_language: preferredLanguage,
+            communication_opt_in: communicationOptIn,
+            consent_analytics: consentAnalytics,
+            consent_personalization: consentPersonalization,
+            consent_ai_training: consentAiTraining,
+          });
+          const ngoRes = await api.createNGO(authRes.token, {
+            name: ngoName,
+            description: ngoDesc,
+            sector: ngoSector || undefined,
+            website: ngoWebsite || undefined,
+            headquarters_city: ngoCity || undefined,
+            primary_contact_name: fullName || undefined,
+            primary_contact_phone: phone || undefined,
+            operating_regions: splitCsv(ngoRegions),
+            mission_focus: splitCsv(ngoMissionFocus),
+          });
+          const p = JSON.parse(atob(ngoRes.token.split(".")[1]));
+          storeTokenAndRedirect(ngoRes.token, "ngo_admin", p.ngo_id, googleEmail);
+        } else {
+          const authRes = await api.googleAuth({
+            email: googleEmail,
+            firebase_uid: googleUid,
+            role: "volunteer",
+            invite_code: inviteCode,
+            full_name: fullName || undefined,
+            phone: phone || undefined,
+            city: volCity || undefined,
+            preferred_language: preferredLanguage,
+            communication_opt_in: communicationOptIn,
+            consent_analytics: consentAnalytics,
+            consent_personalization: consentPersonalization,
+            consent_ai_training: consentAiTraining,
+            motivation_statement: volMotivation || undefined,
+            languages: splitCsv(volLanguages),
+            causes_supported: splitCsv(volCauses),
+            education_level: volEducation || undefined,
+            years_experience: volYearsExperience ? Number(volYearsExperience) : undefined,
+            skills: splitCsv(volSkills),
+            bio: volBio || undefined,
+            date_of_birth: volDateOfBirth || undefined,
+            emergency_contact_name: volEmergencyName || undefined,
+            emergency_contact_phone: volEmergencyPhone || undefined,
+            preferred_roles: splitCsv(volRoles),
+            certifications: splitCsv(volCertifications),
+            availability_notes: volAvailabilityNotes || undefined,
+          });
+          const p = JSON.parse(atob(authRes.token.split(".")[1]));
+          storeTokenAndRedirect(authRes.token, "volunteer", p.ngo_id, googleEmail);
+        }
       } else {
-        const signup = await api.signup({
-          email,
-          password,
-          role: "volunteer",
-          invite_code: inviteCode,
-          full_name: fullName || undefined,
-          phone: phone || undefined,
-          city: volCity || undefined,
-          preferred_language: preferredLanguage,
-          communication_opt_in: communicationOptIn,
-          consent_analytics: consentAnalytics,
-          consent_personalization: consentPersonalization,
-          consent_ai_training: consentAiTraining,
-          motivation_statement: volMotivation || undefined,
-          languages: splitCsv(volLanguages),
-          causes_supported: splitCsv(volCauses),
-          education_level: volEducation || undefined,
-          years_experience: volYearsExperience ? Number(volYearsExperience) : undefined,
-          skills: splitCsv(volSkills),
-          bio: volBio || undefined,
-          date_of_birth: volDateOfBirth ? volDateOfBirth : undefined,
-          emergency_contact_name: volEmergencyName || undefined,
-          emergency_contact_phone: volEmergencyPhone || undefined,
-          preferred_roles: splitCsv(volRoles),
-          certifications: splitCsv(volCertifications),
-          availability_notes: volAvailabilityNotes || undefined,
-        });
-        localStorage.setItem("ngo_token", signup.token);
-        document.cookie = `ngo_token=${signup.token}; path=/; max-age=${60 * 60 * 24}`;
-        const p = JSON.parse(atob(signup.token.split(".")[1]));
-        setUser({ user_id: p.sub, role: "volunteer", ngo_id: p.ngo_id, email, token: signup.token });
-        router.push("/vol/dashboard");
+        // ── Email / password registration path (unchanged) ──────────────
+        if (tab === "ngo") {
+          const signup = await api.signup({
+            email,
+            password,
+            role: "ngo_admin",
+            full_name: fullName || undefined,
+            phone: phone || undefined,
+            preferred_language: preferredLanguage,
+            communication_opt_in: communicationOptIn,
+            consent_analytics: consentAnalytics,
+            consent_personalization: consentPersonalization,
+            consent_ai_training: consentAiTraining,
+          });
+          const ngoRes = await api.createNGO(signup.token, {
+            name: ngoName,
+            description: ngoDesc,
+            sector: ngoSector || undefined,
+            website: ngoWebsite || undefined,
+            headquarters_city: ngoCity || undefined,
+            primary_contact_name: fullName || undefined,
+            primary_contact_phone: phone || undefined,
+            operating_regions: splitCsv(ngoRegions),
+            mission_focus: splitCsv(ngoMissionFocus),
+          });
+          const p = JSON.parse(atob(ngoRes.token.split(".")[1]));
+          storeTokenAndRedirect(ngoRes.token, "ngo_admin", p.ngo_id, email);
+        } else {
+          const signup = await api.signup({
+            email,
+            password,
+            role: "volunteer",
+            invite_code: inviteCode,
+            full_name: fullName || undefined,
+            phone: phone || undefined,
+            city: volCity || undefined,
+            preferred_language: preferredLanguage,
+            communication_opt_in: communicationOptIn,
+            consent_analytics: consentAnalytics,
+            consent_personalization: consentPersonalization,
+            consent_ai_training: consentAiTraining,
+            motivation_statement: volMotivation || undefined,
+            languages: splitCsv(volLanguages),
+            causes_supported: splitCsv(volCauses),
+            education_level: volEducation || undefined,
+            years_experience: volYearsExperience ? Number(volYearsExperience) : undefined,
+            skills: splitCsv(volSkills),
+            bio: volBio || undefined,
+            date_of_birth: volDateOfBirth ? volDateOfBirth : undefined,
+            emergency_contact_name: volEmergencyName || undefined,
+            emergency_contact_phone: volEmergencyPhone || undefined,
+            preferred_roles: splitCsv(volRoles),
+            certifications: splitCsv(volCertifications),
+            availability_notes: volAvailabilityNotes || undefined,
+          });
+          const p = JSON.parse(atob(signup.token.split(".")[1]));
+          storeTokenAndRedirect(signup.token, "volunteer", p.ngo_id, email);
+        }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(friendlyError(err));
     } finally {
       setLoading(false);
@@ -160,16 +239,24 @@ export default function RegisterPage() {
           className="rounded-2xl overflow-hidden"
           style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(20px)" }}
         >
+          {/* Google mode banner */}
+          {googleMode && (
+            <div
+              className="mx-6 mt-5 rounded-lg px-4 py-2.5 text-xs text-center font-medium"
+              style={{ background: "rgba(72,161,94,0.15)", border: "1px solid rgba(72,161,94,0.3)", color: "#6ee7b7" }}
+            >
+              Signing up with Google — complete your profile below
+            </div>
+          )}
+
           {/* Tab toggle */}
-          <div className="flex border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+          <div className={`flex border-b${googleMode ? " mt-3" : ""}`} style={{ borderColor: "rgba(255,255,255,0.08)" }}>
             {(["ngo", "volunteer"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => { setTab(t); setError(""); }}
                 className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-sm font-semibold transition-all ${
-                  tab === t
-                    ? "text-white"
-                    : "text-white/35 hover:text-white/60"
+                  tab === t ? "text-white" : "text-white/35 hover:text-white/60"
                 }`}
                 style={tab === t ? { background: "linear-gradient(135deg, #2A8256 0%, #48A15E 100%)" } : {}}
               >
@@ -186,16 +273,18 @@ export default function RegisterPage() {
                 : "Join an NGO using your invite code."}
             </p>
 
+            {/* Email */}
             <div>
               <label className="text-xs font-medium text-white/60 block mb-1">Email</label>
               <input
                 type="email"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={googleMode ? googleEmail : email}
+                onChange={googleMode ? undefined : (e) => setEmail(e.target.value)}
+                readOnly={googleMode}
                 placeholder="you@example.com"
                 className="w-full rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/30 outline-none"
-                style={inputStyle}
+                style={{ ...inputStyle, ...(googleMode ? { opacity: 0.65, cursor: "not-allowed" } : {}) }}
               />
             </div>
 
@@ -239,29 +328,33 @@ export default function RegisterPage() {
               </select>
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-white/60 block mb-1">Password</label>
-              <div className="relative">
-                <input
-                  type={showPwd ? "text" : "password"}
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min 8 characters"
-                  className="w-full rounded-lg px-3 py-2.5 pr-10 text-sm text-white placeholder-white/30 outline-none"
-                  style={inputStyle}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwd((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
-                >
-                  {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
+            {/* Password — hidden for Google sign-up */}
+            {!googleMode && (
+              <div>
+                <label className="text-xs font-medium text-white/60 block mb-1">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? "text" : "password"}
+                    required
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min 8 characters"
+                    className="w-full rounded-lg px-3 py-2.5 pr-10 text-sm text-white placeholder-white/30 outline-none"
+                    style={inputStyle}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                  >
+                    {showPwd ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
+            {/* ── NGO fields ── */}
             {tab === "ngo" && (
               <>
                 <div>
@@ -350,6 +443,7 @@ export default function RegisterPage() {
               </>
             )}
 
+            {/* ── Volunteer fields ── */}
             {tab === "volunteer" && (
               <>
                 <div>
@@ -530,6 +624,7 @@ export default function RegisterPage() {
               </>
             )}
 
+            {/* Consent */}
             <div className="space-y-2 rounded-lg p-3" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
               <p className="text-[11px] text-white/70 font-semibold">Consent Preferences</p>
               <label className="flex items-center gap-2 text-xs text-white/60">
@@ -568,15 +663,32 @@ export default function RegisterPage() {
               {tab === "ngo" ? "Create NGO Account" : "Join NGO"}
             </motion.button>
 
-            <p className="text-center text-xs text-white/30 pt-1">
-              Already have an account?{" "}
-              <a href="/login-ngo" className="text-[#95C78F] font-semibold hover:underline">
-                Sign in
-              </a>
-            </p>
+            {!googleMode && (
+              <p className="text-center text-xs text-white/30 pt-1">
+                Already have an account?{" "}
+                <a href="/login-ngo" className="text-[#95C78F] font-semibold hover:underline">
+                  Sign in
+                </a>
+              </p>
+            )}
           </form>
         </div>
       </motion.div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="min-h-screen"
+          style={{ background: "radial-gradient(ellipse at 50% 0%, #115E54 0%, #0B3D36 50%, #072921 100%)" }}
+        />
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }

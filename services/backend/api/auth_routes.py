@@ -64,6 +64,12 @@ class NGOCreateReq(BaseModel):
     mission_focus: list[str] = Field(default_factory=list)
 
 
+class CheckEmailResponse(BaseModel):
+    exists: bool
+    role: str | None = None
+    ngo_id: str | None = None
+
+
 class LoginReq(BaseModel):
     email:    EmailStr
     password: str
@@ -413,6 +419,15 @@ async def _google_auth_inner(req: GoogleAuthReq, db: AsyncSession):
                 "needs_ngo_setup": existing_user.role == "ngo_admin" and not existing_user.ngo_id,
             }
         raise
+
+
+@router.get("/check-email", response_model=CheckEmailResponse)
+async def check_email(email: str, db: AsyncSession = Depends(get_db)):
+    """Public — no auth. Returns whether email is registered and their role/ngo_id."""
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if not user:
+        return CheckEmailResponse(exists=False)
+    return CheckEmailResponse(exists=True, role=user.role, ngo_id=str(user.ngo_id) if user.ngo_id else None)
 
 
 @router.post("/logout")

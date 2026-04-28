@@ -1,8 +1,12 @@
 import logging
 import asyncio
+import os
 import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
+
+# Ensure Gemini is configured when this module is imported, regardless of import order
+genai.configure(api_key=os.environ.get("GEM_KEY", ""))
 
 class LLMOrchestrator:
     """

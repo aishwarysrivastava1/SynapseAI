@@ -17,60 +17,22 @@ import { ChatbotWidget } from "@/components/ui/ChatbotWidget";
 
 // ── Shared sign-in logic ──────────────────────────────────────────────────────
 
-const BACKEND = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
-
-async function exchangeAndRedirect(
-  firebaseUser: { email: string; uid: string },
-  role: "ngo_admin" | "volunteer",
-  inviteCode: string,
-  router: ReturnType<typeof useRouter>,
-  setError: (e: string) => void,
-  setBusy: (b: boolean) => void,
-): Promise<void> {
-  if (BACKEND.includes("localhost") && typeof window !== "undefined" && location.protocol === "https:") {
-    console.error("[auth] NEXT_PUBLIC_BACKEND_URL is not set — will fail on deployed frontend.");
-  }
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
-  try {
-    const data = await googleAuthWithRetry(
-      {
-        email: firebaseUser.email,
-        firebase_uid: firebaseUser.uid,
-        role,
-        invite_code: role === "volunteer" ? inviteCode.trim() || undefined : undefined,
-      },
-      { attempts: 3, timeoutMs: 30000 },
-    );
-    clearTimeout(timeoutId);
-    localStorage.setItem("ngo_token", data.token);
-    document.cookie = `ngo_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Strict${location.protocol === "https:" ? "; Secure" : ""}`;
-    if (data.needs_ngo_setup) window.location.href = "/ngo/setup";
-    else if (role === "ngo_admin") window.location.href = "/ngo/dashboard";
-    else window.location.href = "/vol/dashboard";
-  } catch (e: unknown) {
-    clearTimeout(timeoutId);
-    setError(friendlyError(e));
-    setBusy(false);
-  }
-}
-
 async function handleGoogleSignIn(
-  role: "ngo_admin" | "volunteer",
-  inviteCode: string,
   router: ReturnType<typeof useRouter>,
   setError: (e: string) => void,
   setBusy: (b: boolean) => void,
 ) {
   setError("");
   setBusy(true);
+
+  // Step 1: Firebase popup
   let firebaseUser;
   try {
     firebaseUser = await firebaseSignIn();
   } catch (e: unknown) {
     const code = authErrorCode(e);
     if (isDismissedPopupError(e)) {
-      // dismissed
+      // user closed popup — silent
     } else if (code === "auth/redirect-started") {
       setError("Redirecting to Google sign-in...");
     } else if (code === "auth/popup-blocked") {
@@ -81,10 +43,42 @@ async function handleGoogleSignIn(
     if (code !== "auth/redirect-started") setBusy(false);
     return;
   }
-  await exchangeAndRedirect(
-    { email: firebaseUser.email!, uid: firebaseUser.uid },
-    role, inviteCode, router, setError, setBusy,
-  );
+
+  const email = firebaseUser.email!;
+  const uid   = firebaseUser.uid;
+  const name  = firebaseUser.displayName ?? "";
+
+  // Step 2: Check if email already registered
+  let check: { exists: boolean; role: string | null; ngo_id: string | null };
+  try {
+    check = await api.checkEmail(email);
+  } catch (e: unknown) {
+    setError(friendlyError(e));
+    setBusy(false);
+    return;
+  }
+
+  if (check.exists) {
+    // Existing user — exchange for JWT and redirect to dashboard seamlessly
+    try {
+      const data = await googleAuthWithRetry(
+        { email, firebase_uid: uid, role: check.role as "ngo_admin" | "volunteer" },
+        { attempts: 3, timeoutMs: 30000 },
+      );
+      localStorage.setItem("ngo_token", data.token);
+      document.cookie = `ngo_token=${data.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Strict${location.protocol === "https:" ? "; Secure" : ""}`;
+      if (data.needs_ngo_setup) window.location.href = "/ngo/setup";
+      else if (data.role === "ngo_admin") window.location.href = "/ngo/dashboard";
+      else window.location.href = "/vol/dashboard";
+    } catch (e: unknown) {
+      setError(friendlyError(e));
+      setBusy(false);
+    }
+  } else {
+    // New user — send to registration form with Google identity pre-filled
+    const params = new URLSearchParams({ mode: "google", email, uid, name });
+    window.location.href = `/register?${params.toString()}`;
+  }
 }
 
 async function handleGuestSignIn(
@@ -372,13 +366,7 @@ function LoginCard({ role, router, isDark }: { role: "ngo_admin" | "volunteer"; 
 
       {/* Google button */}
       <motion.button
-        onClick={() => {
-          if (role === "volunteer" && !inviteCode.trim()) {
-            setError("Enter your invite code before continuing.");
-            return;
-          }
-          handleGoogleSignIn(role, inviteCode, router, setError, setBusy);
-        }}
+        onClick={() => handleGoogleSignIn(router, setError, setBusy)}
         disabled={busy}
         whileHover={{ scale: busy ? 1 : 1.015, boxShadow: busy ? undefined : "0 8px 24px rgba(0,0,0,0.2)" }}
         whileTap={{ scale: busy ? 1 : 0.975 }}
