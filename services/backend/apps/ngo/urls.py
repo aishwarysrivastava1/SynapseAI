@@ -1,0 +1,33 @@
+﻿from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("dashboard",                                        views.DashboardView.as_view()),
+    path("volunteers",                                       views.VolunteersView.as_view()),
+    path("volunteers/<str:volunteer_id>",                    views.VolunteerDetailView.as_view()),
+    path("volunteer-locations",                              views.VolunteerLocationsView.as_view()),
+    path("tasks",                                            views.TasksView.as_view()),
+    path("tasks/<str:task_id>",                              views.TaskDetailView.as_view()),
+    path("tasks/<str:task_id>/assign",                       views.AssignTaskView.as_view()),
+    path("tasks/<str:task_id>/ping",                         views.PingTaskView.as_view()),
+    path("tasks/<str:task_id>/complete",                     views.CompleteTaskView.as_view()),
+    path("tasks/<str:task_id>/ai-match",                     views.AIMatchView.as_view()),
+    path("assign-tasks",                                     views.BulkAssignView.as_view()),
+    path("assignments",                                      views.AssignmentsListView.as_view()),
+    path("routes/preview",                                   views.RoutePreviewView.as_view()),
+    path("resources",                                        views.ResourcesView.as_view()),
+    path("resources/<str:resource_id>",                      views.ResourceDetailView.as_view()),
+    path("allocate-resource/<str:resource_id>",              views.AllocateResourceView.as_view()),
+    path("events",                                           views.EventsView.as_view()),
+    path("events/<str:event_id>",                            views.EventDetailView.as_view()),
+    path("events/<str:event_id>/attendance",                 views.EventAttendanceView.as_view()),
+    path("events/<str:event_id>/attendance/<str:vol_id>",    views.EventAttendanceView.as_view()),
+    path("enrollments",                                      views.EnrollmentsView.as_view()),
+    path("enrollments/<str:enrollment_id>/<str:action>",     views.EnrollmentActionView.as_view()),
+    path("notifications",                                    views.NGONotificationsView.as_view()),
+    path("notifications/read-all",                           views.NotificationReadAllView.as_view()),
+    path("notifications/<str:notif_id>",                     views.NGONotificationsView.as_view()),
+    path("notifications/<str:notif_id>/read",                views.NotificationReadView.as_view()),
+    path("analytics",                                        views.NGOAnalyticsView.as_view()),
+    path("alerts",                                           views.AlertsView.as_view()),
+]

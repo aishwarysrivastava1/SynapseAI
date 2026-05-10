@@ -24,6 +24,7 @@ from api.chatbot_routes    import router as chatbot_router
 from api.metrics_routes    import router as metrics_router
 from services.live_location_cache import live_location_cache
 from services.neo4j_service import neo4j_service
+from services.chatbot.llm import verify_gemini_key
 from db.base import init_db
 from utils.auth_utils import validate_jwt_config
 
@@ -39,7 +40,9 @@ async def lifespan(app: FastAPI):
     try:
         await init_db()  # create PostgreSQL tables (idempotent)
     except Exception as e:
-        logger.warning(f"PostgreSQL init skipped (no DB configured?): {e}")
+        logger.warning("PostgreSQL init skipped (no DB configured?): %s", e)
+    # Verify Gemini API key (non-blocking — logs warning but doesn't abort startup)
+    await verify_gemini_key()
     yield
     # Shutdown
     await live_location_cache.shutdown()
@@ -52,13 +55,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 _FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 _extra_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from middleware.guest import GuestSessionMiddleware
+from middleware.rate_limit import limiter
+from middleware.security_headers import SecurityHeadersMiddleware
 
-# CORSMiddleware added first so it executes last (FastAPI reverses middleware stack).
-# GuestSessionMiddleware then runs before CORS, ensuring CORS headers always apply.
+# Middleware registration order (FastAPI reverses the stack):
+# CORS runs last (outermost on the way out) — so it's registered first.
+# SecurityHeaders runs second-to-last, after business logic.
+# GuestSession runs close to the handler.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=(
@@ -66,11 +79,12 @@ app.add_middleware(
         + ([_FRONTEND_URL] if _FRONTEND_URL else [])
         + _extra_origins
     ),
-    allow_origin_regex=r"https?://.*",
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Seed-Secret", "X-Service-Secret", "X-Metrics-Token"],
     allow_credentials=True,
 )
+app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(GuestSessionMiddleware)
 
 

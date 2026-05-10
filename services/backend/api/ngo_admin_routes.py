@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 
+from api.schemas import PaginationParams, make_paginated
 from db.base import get_db
 from db.models import User, VolunteerProfile, Task, Assignment, Resource, Allocation, Notification, NGO, Event, EventAttendance, TaskEnrollmentRequest
 from middleware.rbac import CurrentUser, require_ngo_admin, assert_same_ngo
@@ -139,25 +140,35 @@ async def ngo_dashboard(
 
 @router.get("/volunteers")
 async def list_volunteers(
-    skill:  Optional[str] = Query(None),
-    status: Optional[str] = Query(None, pattern="^(active|inactive)$"),
+    skill:      Optional[str] = Query(None),
+    status:     Optional[str] = Query(None, pattern="^(active|inactive)$"),
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    q = (
+    base_q = (
         select(User, VolunteerProfile)
         .join(VolunteerProfile, VolunteerProfile.user_id == User.id)
         .where(User.ngo_id == user.ngo_id, User.role == "volunteer")
     )
     if status:
-        q = q.where(VolunteerProfile.status == status)
+        base_q = base_q.where(VolunteerProfile.status == status)
 
-    rows = (await db.execute(q)).fetchall()
-    result = []
+    total = (await db.execute(
+        select(func.count()).select_from(base_q.subquery())
+    )).scalar() or 0
+
+    rows = (await db.execute(
+        base_q.order_by(User.created_at.desc())
+              .offset(pagination.offset)
+              .limit(pagination.page_size)
+    )).fetchall()
+
+    items = []
     for u, p in rows:
         if skill and skill.lower() not in [s.lower() for s in (p.skills or [])]:
             continue
-        result.append({
+        items.append({
             "id":           u.id,
             "user_id":      u.id,
             "email":        u.email,
@@ -167,7 +178,7 @@ async def list_volunteers(
             "status":       p.status,
             "created_at":   u.created_at,
         })
-    return result
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/volunteers/{volunteer_id}/deactivate")
@@ -196,6 +207,7 @@ async def deactivate_volunteer(
 async def list_tasks(
     status:          Optional[str]  = Query(None),
     deadline_before: Optional[datetime] = Query(None),
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -204,9 +216,17 @@ async def list_tasks(
         q = q.where(Task.status == status)
     if deadline_before:
         q = q.where(Task.deadline <= deadline_before)
-    q = q.order_by(Task.created_at.desc())
-    tasks = (await db.execute(q)).scalars().all()
-    return [
+
+    total = (await db.execute(
+        select(func.count()).select_from(q.subquery())
+    )).scalar() or 0
+
+    tasks = (await db.execute(
+        q.order_by(Task.created_at.desc())
+          .offset(pagination.offset)
+          .limit(pagination.page_size)
+    )).scalars().all()
+    items = [
         {
             "id": t.id, "title": t.title, "description": t.description,
             "required_skills": t.required_skills, "priority": t.priority,
@@ -215,6 +235,7 @@ async def list_tasks(
         }
         for t in tasks
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/tasks", status_code=201)
@@ -412,20 +433,31 @@ async def ping_task_volunteers(
 
 @router.get("/enrollment-requests")
 async def list_enrollment_requests(
-    status: Optional[str] = None,
+    status:     Optional[str] = None,
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    q = (
+    base_q = (
         select(TaskEnrollmentRequest, Task, User)
         .join(Task, Task.id == TaskEnrollmentRequest.task_id)
         .join(User, User.id == TaskEnrollmentRequest.volunteer_id)
         .where(TaskEnrollmentRequest.ngo_id == user.ngo_id)
     )
     if status:
-        q = q.where(TaskEnrollmentRequest.status == status)
-    rows = (await db.execute(q.order_by(TaskEnrollmentRequest.created_at.desc()))).fetchall()
-    return [
+        base_q = base_q.where(TaskEnrollmentRequest.status == status)
+
+    total = (await db.execute(
+        select(func.count()).select_from(base_q.subquery())
+    )).scalar() or 0
+
+    rows = (await db.execute(
+        base_q.order_by(TaskEnrollmentRequest.created_at.desc())
+              .offset(pagination.offset)
+              .limit(pagination.page_size)
+    )).fetchall()
+
+    items = [
         {
             "id":              r.id,
             "task_id":         r.task_id,
@@ -439,6 +471,7 @@ async def list_enrollment_requests(
         }
         for r, t, u in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/enrollment-requests/{req_id}/approve")
@@ -699,20 +732,31 @@ async def allocate_resource(
 
 @router.get("/assignments")
 async def list_assignments(
-    status: Optional[str] = Query(None),
+    status:     Optional[str] = Query(None),
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
     q = select(Assignment).where(Assignment.ngo_id == user.ngo_id)
     if status:
         q = q.where(Assignment.status == status)
-    q = q.order_by(Assignment.assigned_at.desc())
-    rows = (await db.execute(q)).scalars().all()
-    return [
+
+    total = (await db.execute(
+        select(func.count()).select_from(q.subquery())
+    )).scalar() or 0
+
+    rows = (await db.execute(
+        q.order_by(Assignment.assigned_at.desc())
+          .offset(pagination.offset)
+          .limit(pagination.page_size)
+    )).scalars().all()
+
+    items = [
         {"id": a.id, "task_id": a.task_id, "volunteer_id": a.volunteer_id,
          "status": a.status, "assigned_at": a.assigned_at}
         for a in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 # ── Analytics ────────────────────────────────────────────────────────────────
@@ -722,84 +766,141 @@ async def analytics(
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Comprehensive NGO analytics dashboard.
+    Covers task lifecycle, volunteer utilization, skill gaps, and assignment timing.
+    All data from PostgreSQL — no mock values.
+    """
+    from collections import Counter
     nid = user.ngo_id
 
-    total_tasks     = (await db.execute(select(func.count()).select_from(Task).where(Task.ngo_id == nid))).scalar() or 1
-    completed_tasks = (await db.execute(select(func.count()).select_from(Task).where(Task.ngo_id == nid, Task.status == "completed"))).scalar() or 0
-    task_completion_rate = round(completed_tasks / total_tasks, 4)
+    # ── Task metrics ─────────────────────────────────────────────────────────
+    total_tasks      = (await db.execute(select(func.count()).select_from(Task).where(Task.ngo_id == nid))).scalar() or 0
+    open_tasks       = (await db.execute(select(func.count()).select_from(Task).where(Task.ngo_id == nid, Task.status == "open"))).scalar() or 0
+    in_progress      = (await db.execute(select(func.count()).select_from(Task).where(Task.ngo_id == nid, Task.status == "in_progress"))).scalar() or 0
+    completed_tasks  = (await db.execute(select(func.count()).select_from(Task).where(Task.ngo_id == nid, Task.status == "completed"))).scalar() or 0
+    completion_rate  = round(completed_tasks / max(total_tasks, 1) * 100, 1)
 
-    vol_rows = (await db.execute(
-        select(VolunteerProfile).where(VolunteerProfile.ngo_id == nid)
-    )).scalars().all()
+    # ── Volunteer metrics ────────────────────────────────────────────────────
+    vol_rows   = (await db.execute(select(VolunteerProfile).where(VolunteerProfile.ngo_id == nid))).scalars().all()
     total_vols = len(vol_rows)
+    active_vols = sum(1 for v in vol_rows if v.status == "active")
 
-    # Volunteer utilization: volunteers with at least one active assignment
     active_vol_ids = (await db.execute(
         select(Assignment.volunteer_id).distinct().where(
             Assignment.ngo_id == nid,
             Assignment.status.in_(["assigned", "accepted"]),
         )
     )).scalars().all()
-    volunteer_utilization = round(len(active_vol_ids) / max(total_vols, 1), 4)
+    utilization_rate = round(len(active_vol_ids) / max(active_vols, 1) * 100, 1)
 
-    # Assignment counts
-    total_assignments = (await db.execute(
-        select(func.count()).select_from(Assignment).where(Assignment.ngo_id == nid)
-    )).scalar() or 0
-    completed_assignments = (await db.execute(
-        select(func.count()).select_from(Assignment).where(Assignment.ngo_id == nid, Assignment.status == "completed")
-    )).scalar() or 0
+    # ── Assignment metrics ───────────────────────────────────────────────────
+    total_assigns    = (await db.execute(select(func.count()).select_from(Assignment).where(Assignment.ngo_id == nid))).scalar() or 0
+    completed_assigns = (await db.execute(select(func.count()).select_from(Assignment).where(Assignment.ngo_id == nid, Assignment.status == "completed"))).scalar() or 0
 
-    all_skills: dict[str, int] = {}
+    # Average match score for completed assignments
+    avg_match_row = (await db.execute(
+        select(func.avg(Assignment.match_score)).where(
+            Assignment.ngo_id == nid,
+            Assignment.match_score.isnot(None),
+        )
+    )).scalar()
+    avg_match_score = round(float(avg_match_row or 0), 3)
+
+    # Assignment lifecycle timing: assigned → accepted, accepted → completed
+    timed_rows = (await db.execute(
+        select(Assignment.assigned_at, Assignment.accepted_at, Assignment.completed_at)
+        .where(Assignment.ngo_id == nid)
+    )).all()
+
+    time_to_accept_h, time_to_complete_h = [], []
+    for r in timed_rows:
+        if r.assigned_at and r.accepted_at:
+            time_to_accept_h.append((r.accepted_at - r.assigned_at).total_seconds() / 3600)
+        if r.accepted_at and r.completed_at:
+            time_to_complete_h.append((r.completed_at - r.accepted_at).total_seconds() / 3600)
+
+    avg_accept_h   = round(sum(time_to_accept_h)  / max(len(time_to_accept_h),  1), 2)
+    avg_complete_h = round(sum(time_to_complete_h) / max(len(time_to_complete_h), 1), 2)
+
+    # ── Skill gap analysis (Counter-based, O(N)) ─────────────────────────────
+    supply: Counter = Counter()
     for p in vol_rows:
         for s in (p.skills or []):
-            all_skills[s] = all_skills.get(s, 0) + 1
+            supply[s.lower()] += 1
 
-    task_rows = (await db.execute(
-        select(Task).where(Task.ngo_id == nid, Task.status.in_(["open", "in_progress"]))
+    active_task_rows = (await db.execute(
+        select(Task.required_skills).where(Task.ngo_id == nid, Task.status.in_(["open", "in_progress"]))
     )).scalars().all()
-    required: dict[str, int] = {}
-    for t in task_rows:
-        for s in (t.required_skills or []):
-            required[s] = required.get(s, 0) + 1
+    demand: Counter = Counter()
+    for skills_list in active_task_rows:
+        for s in (skills_list or []):
+            demand[s.lower()] += 1
 
-    gaps = [{"skill": s, "demand": cnt, "supply": all_skills.get(s, 0)} for s, cnt in required.items()]
-    gaps.sort(key=lambda x: x["demand"] - x["supply"], reverse=True)
+    skill_gaps = sorted(
+        [
+            {"skill": s, "demand": dem, "supply": supply.get(s, 0), "gap": max(0, dem - supply.get(s, 0))}
+            for s, dem in demand.items()
+        ],
+        key=lambda x: -x["gap"],
+    )[:20]
 
-    timed_rows = (await db.execute(
-        select(Assignment.assigned_at, Assignment.accepted_at)
-        .where(Assignment.ngo_id == nid, Assignment.accepted_at.isnot(None))
+    # ── Volunteer leaderboard (top 10 by completed tasks) ────────────────────
+    leaderboard_rows = (await db.execute(
+        select(
+            Assignment.volunteer_id,
+            func.count(Assignment.id).label("completed"),
+            func.avg(Assignment.match_score).label("avg_score"),
+            func.avg(Assignment.completion_rating).label("avg_rating"),
+        )
+        .where(Assignment.ngo_id == nid, Assignment.status == "completed")
+        .group_by(Assignment.volunteer_id)
+        .order_by(func.count(Assignment.id).desc())
+        .limit(10)
     )).all()
-    valid_timed = [r for r in timed_rows if r.accepted_at and r.assigned_at]
-    avg_time = round(
-        sum((r.accepted_at - r.assigned_at).total_seconds() / 3600 for r in valid_timed) / len(valid_timed), 1
-    ) if valid_timed else 0
+
+    leaderboard = [
+        {
+            "rank":            i + 1,
+            "volunteer_id":    r.volunteer_id,
+            "completed_tasks": r.completed,
+            "avg_match_score": round(float(r.avg_score or 0), 3),
+            "avg_rating":      round(float(r.avg_rating or 0), 2),
+        }
+        for i, r in enumerate(leaderboard_rows)
+    ]
 
     return {
-        "task_completion_rate":   task_completion_rate,
-        "completed_tasks":        completed_tasks,
-        "total_tasks":            total_tasks,
-        "volunteer_utilization":  volunteer_utilization,
-        "total_assignments":      total_assignments,
-        "completed_assignments":  completed_assignments,
-        "avg_assignment_time_hours": avg_time,
-        "skill_coverage":         all_skills,
-        "skill_gaps":             [g["skill"] for g in gaps if g["supply"] == 0][:10],
-        "skill_coverage_gaps":    gaps[:10],
-        "top_skills":             sorted(all_skills.items(), key=lambda x: x[1], reverse=True)[:10],
-        "volunteer_count":        total_vols,
+        "tasks": {
+            "total": total_tasks, "open": open_tasks,
+            "in_progress": in_progress, "completed": completed_tasks,
+            "completion_rate_pct": completion_rate,
+        },
+        "volunteers": {
+            "total": total_vols, "active": active_vols,
+            "utilization_rate_pct": utilization_rate,
+        },
+        "assignments": {
+            "total": total_assigns, "completed": completed_assigns,
+            "avg_match_score": avg_match_score,
+            "avg_time_to_accept_hours":   avg_accept_h,
+            "avg_time_to_complete_hours": avg_complete_h,
+        },
+        "skill_gaps":  skill_gaps,
+        "leaderboard": leaderboard,
     }
 
 
 @router.get("/alerts")
 async def get_alerts(
+    deadline_days: int = Query(3, ge=1, le=30, description="Warn for tasks due within N days"),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
     nid = user.ngo_id
     alerts = []
-    now = datetime.utcnow()
-    deadline_cutoff = now + timedelta(days=3)
+    now = datetime.now(tz=dt.timezone.utc).replace(tzinfo=None)
+    deadline_cutoff = now + timedelta(days=deadline_days)
 
     # Alert 1: Open tasks with deadline within 3 days
     urgent_tasks = (await db.execute(
@@ -857,19 +958,28 @@ async def get_alerts(
 
 @router.get("/notifications")
 async def get_ngo_notifications(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    total = (await db.execute(
+        select(func.count()).select_from(Notification)
+        .where(Notification.user_id == user.user_id)
+    )).scalar() or 0
+
     rows = (await db.execute(
         select(Notification)
         .where(Notification.user_id == user.user_id)
         .order_by(Notification.is_read.asc(), Notification.created_at.desc())
-        .limit(50)
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
     )).scalars().all()
-    return [
+
+    items = [
         {"id": n.id, "message": n.message, "type": n.type, "is_read": n.is_read, "created_at": n.created_at}
         for n in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/notifications/{notif_id}/read")
@@ -918,25 +1028,35 @@ class AttendanceReq(BaseModel):
 
 @router.get("/events")
 async def list_events(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_ngo_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = (await db.execute(
-        select(Event).where(Event.ngo_id == user.ngo_id).order_by(Event.date.desc())
-    )).scalars().all()
+    total = (await db.execute(
+        select(func.count()).select_from(Event).where(Event.ngo_id == user.ngo_id)
+    )).scalar() or 0
 
-    result = []
-    for e in rows:
-        count = (await db.execute(
-            select(func.count()).select_from(EventAttendance).where(EventAttendance.event_id == e.id)
-        )).scalar() or 0
-        result.append({
+    # Single query: join attendee counts to avoid N+1
+    rows = (await db.execute(
+        select(Event, func.count(EventAttendance.id).label("attendee_count"))
+        .outerjoin(EventAttendance, EventAttendance.event_id == Event.id)
+        .where(Event.ngo_id == user.ngo_id)
+        .group_by(Event.id)
+        .order_by(Event.date.desc())
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
+    )).all()
+
+    items = [
+        {
             "id": e.id, "title": e.title, "description": e.description,
             "event_type": e.event_type, "date": e.date.isoformat(),
             "location": e.location, "max_volunteers": e.max_volunteers,
-            "status": e.status, "attendee_count": count,
-        })
-    return result
+            "status": e.status, "attendee_count": cnt,
+        }
+        for e, cnt in rows
+    ]
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/events")

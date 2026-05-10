@@ -140,23 +140,32 @@ async def _get_sim_snapshot():
     vol_data = []
     for rec in (vols or []):
         v = rec["v"]
+        lat = v.get("lat") or v.get("latitude")
+        lng = v.get("lng") or v.get("longitude")
+        if lat is None or lng is None:
+            continue  # skip volunteers without location — no phantom defaults
         vol_data.append({
             "id": v.get("id"), "name": v.get("name"),
             "reputationScore": v.get("reputationScore") or v.get("reputation_score") or 50,
             "skills": rec.get("skills", []),
-            "lat": v.get("lat", 19.0530), "lng": v.get("lng", 72.8543),
+            "lat": float(lat), "lng": float(lng),
         })
 
     task_data = []
     for rec in (tasks or []):
         n = rec["n"]
         l = rec.get("l") or {}
+        t_lat = l.get("lat") or n.get("lat")
+        t_lng = l.get("lng") or n.get("lng")
+        if t_lat is None or t_lng is None:
+            continue  # skip tasks without location data
+        urgency = float(n.get("urgency_score") or 0.5)
         task_data.append({
             "id": n.get("id"), "description": n.get("description", ""),
-            "urgency_score": n.get("urgency_score", 0.5),
+            "urgency_score": urgency,
             "required_skills": rec.get("required_skills", []),
-            "lat": l.get("lat", 19.0530), "lng": l.get("lng", 72.8543),
-            "difficulty": max(5, int((1 - n.get("urgency_score", 0.5)) * 20 + 5)),
+            "lat": float(t_lat), "lng": float(t_lng),
+            "difficulty": max(5, int((1.0 - urgency) * 20 + 5)),
         })
     return vol_data, task_data
 
@@ -167,9 +176,13 @@ async def run_simulation_scenario(num_steps: int = 50, strategy: str = "skill_fi
     vol_data, task_data = await _get_sim_snapshot()
 
     if not task_data:
-        return {"message": "No pending tasks to simulate", "tasks_completed": 0, "total_tasks": 0, "strategy": strategy, "steps_simulated": 0, "completion_rate": 0, "step_log": []}
+        return {"message": "No pending tasks with location data to simulate",
+                "tasks_completed": 0, "total_tasks": 0, "strategy": strategy,
+                "steps_simulated": 0, "completion_rate": 0, "step_log": []}
     if not vol_data:
-        return {"message": "No volunteers available", "tasks_completed": 0, "total_tasks": len(task_data), "strategy": strategy, "steps_simulated": 0, "completion_rate": 0, "step_log": []}
+        return {"message": "No volunteers with location data available",
+                "tasks_completed": 0, "total_tasks": len(task_data), "strategy": strategy,
+                "steps_simulated": 0, "completion_rate": 0, "step_log": []}
 
     model = NGOSimulation(vol_data, task_data, strategy=strategy)
     for _ in range(num_steps):
@@ -179,15 +192,13 @@ async def run_simulation_scenario(num_steps: int = 50, strategy: str = "skill_fi
 
     total = len(task_data)
     done = len(model.completed_tasks)
-    # Applying an artificial boost coefficient if they wanted highest possible numbers
-    boost = 1.05 if done > 0 else 1
     return {
         "strategy": strategy,
         "steps_simulated": model.time_steps,
-        "tasks_completed": int(done * boost),
+        "tasks_completed": done,
         "total_tasks": total,
-        "completion_rate": min(100, round((done * boost) / total * 100, 1)) if total else 0,
-        "final_coverage": min(100, round((done * boost) / total * 100, 1)) if total else 0,
+        "completion_rate": round(done / total * 100, 1) if total else 0,
+        "final_coverage": round(done / total * 100, 1) if total else 0,
         "estimated_hours": round(model.time_steps * 0.5, 1),
         "step_log": model.step_log,
     }

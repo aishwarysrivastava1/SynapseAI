@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from utils.auth_utils import decode_token
 from jose import JWTError
 
+from utils.auth_utils import decode_token, is_token_blacklisted
+
 bearer = HTTPBearer()
+optional_bearer = HTTPBearer(auto_error=False)
 
 
 class CurrentUser:
@@ -15,17 +20,25 @@ class CurrentUser:
         self.email   = email
 
 
-def get_current_user(
+async def get_current_user(
     creds: HTTPAuthorizationCredentials = Depends(bearer),
 ) -> CurrentUser:
     try:
         payload = decode_token(creds.credentials)
+        jti = payload.get("jti")
+        if jti and await is_token_blacklisted(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+            )
         return CurrentUser(
             user_id=payload["sub"],
             role=payload["role"],
             ngo_id=payload.get("ngo_id"),
             email=payload.get("email", ""),
         )
+    except HTTPException:
+        raise
     except (JWTError, KeyError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,13 +62,16 @@ def require_volunteer(user: CurrentUser = Depends(get_current_user)) -> CurrentU
     return user
 
 
-def get_current_user_or_none(
-    creds: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+async def get_current_user_or_none(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(optional_bearer),
 ) -> Optional[CurrentUser]:
     if not creds:
         return None
     try:
         payload = decode_token(creds.credentials)
+        jti = payload.get("jti")
+        if jti and await is_token_blacklisted(jti):
+            return None
         return CurrentUser(
             user_id=payload["sub"],
             role=payload["role"],

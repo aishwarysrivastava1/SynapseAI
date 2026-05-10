@@ -7,10 +7,13 @@
 ### *Bridging the Gap Between Field Chaos and Confirmed Social Impact*
 
 [![Next.js 14](https://img.shields.io/badge/Frontend-Next.js_14-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Django 4.2](https://img.shields.io/badge/ORM-Django_4.2-092E20?style=for-the-badge&logo=django&logoColor=white)](https://www.djangoproject.com)
 [![Gemini 2.5 Flash](https://img.shields.io/badge/AI_Engine-Gemini_2.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com)
 [![Neo4j AuraDB](https://img.shields.io/badge/Knowledge_Graph-Neo4j-008CC1?style=for-the-badge&logo=neo4j&logoColor=white)](https://neo4j.com)
-[![Firebase Ecosystem](https://img.shields.io/badge/Data_Layer-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Firebase Ecosystem](https://img.shields.io/badge/Realtime-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com)
+[![Redis](https://img.shields.io/badge/Cache-Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 
 **Sanchaalan Saathi** (Sanskrit for *Coordination Companion*) is a production-grade, AI-native platform designed to solve the three compounding failures of modern disaster response and NGO management: **Unstructured Data Ingestion**, **Sub-optimal Resource Allocation**, and **Zero-Proof Accountability**.
@@ -28,6 +31,69 @@
 In environments of high entropy—be it a sudden urban flood, a localized medical crisis, or long-term community relief—information is the most volatile asset. Reports arrive via fragmented channels: desperate WhatsApp photos, hurried voice calls, and handwritten field notes.
 
 Sanchaalan Saathi ingests this chaos using **Gemini 2.5 Flash**, projects it into a **Neo4j Property Graph**, and executes globally optimal volunteer matching using the **Hungarian Algorithm**. It doesn't just display a dashboard; it operates as a **coordinated decision engine** that verifies task completion via AI-powered vision analysis, ensuring that every rupee and every man-hour spent by an NGO results in verified ground-truth action.
+
+---
+
+## 🆕 What's New in v2.0
+
+The platform has undergone a major architectural upgrade since v1.0. Below is a summary of the most significant changes.
+
+### Backend: FastAPI + Django Hybrid
+
+The backend now runs as a **FastAPI/ASGI application backed by a full Django ORM layer**. FastAPI handles all HTTP routing and async I/O; Django provides the models, migrations, admin, and DRF serializers.
+
+- `services/backend/apps/` — Django apps: `accounts`, `chatbot`, `core`, `graph`, `guest`, `ingest`, `ngo`, `realtime`, `volunteer`
+- `services/backend/config/` — Django project settings (`base.py`, `asgi.py`, `urls.py`)
+- `services/backend/manage.py` — Standard Django management commands
+
+### New: Advanced Optimization Engine
+
+The former single-file `matcher.py` has been decomposed into a fully modular optimization stack at `services/backend/services/optimization/`:
+
+| Module | Role |
+|---|---|
+| `cost_function.py` | Defines `OptimizationWeights` and the `INFEASIBLE_COST` sentinel |
+| `cost_matrix_builder.py` | Builds the $m \times n$ cost matrix from live volunteers and tasks |
+| `hungarian_solver.py` | `scipy`-based Hungarian Algorithm for global optimum |
+| `greedy_solver.py` | O(n log n) greedy fallback for large or time-constrained problems |
+| `route_optimizer.py` | Decides which solver to use via `should_use_hungarian()` heuristic |
+| `reoptimization_engine.py` | Triggers re-matching when a volunteer goes offline or a task is cancelled |
+
+### New: Production-Grade Chatbot Service
+
+The chatbot at `services/backend/services/chatbot/` is now a full multi-layer stack:
+
+| Module | Role |
+|---|---|
+| `llm.py` | Wraps `langchain-google-genai` with structured output enforcement |
+| `memory.py` | Per-session conversational memory backed by Django ORM |
+| `sessionCache.py` | In-process LRU cache for active session contexts |
+| `cache.py` | Response-level cache keyed by (ngo_id, message hash) to avoid duplicate LLM calls |
+| `cost_control.py` | Per-user daily token quota + global TPM guard using `TokenUsageCounter` model |
+| `guardrails.py` | `FastClassifier` — zero-dependency heuristic toxicity + prompt-injection filter |
+| `optimizer.py` | Prompt compression and context window trimming before each LLM call |
+| `queue.py` | Request serialization to prevent concurrent LLM calls for the same session |
+| `observability.py` | Structured latency + token logging for every chatbot turn |
+
+### New: Live Location Cache
+
+`services/backend/services/live_location_cache.py` provides a write-buffered in-memory store for volunteer GPS coordinates. Positions are held in memory and flushed to PostgreSQL (`VolunteerProfile`) in configurable batches, preventing per-update DB writes during high-frequency field tracking.
+
+### New: Guest Mode
+
+Unauthenticated users can explore the platform via a guest session. The `GuestSessionMiddleware` issues a short-lived guest token, and the `guest_routes.py` API cluster provides read-only access to public need listings.
+
+### New: WebSocket Real-time Layer
+
+`services/backend/services/realtime_events.py` broadcasts task-state transitions via **Django Channels** over WebSocket. A **Redis** channel layer backs the message bus for multi-instance deployments.
+
+### New: PostgreSQL as Primary Relational Store
+
+All Django models (users, tasks, assignments, token counters, etc.) are persisted in **PostgreSQL** via `psycopg3`. Firebase Firestore is retained for real-time PWA sync; Neo4j is retained for the knowledge graph.
+
+### New: RBAC Middleware
+
+`services/backend/middleware/rbac.py` enforces role-based access (`ngo_admin`, `volunteer`, `guest`) on every FastAPI route via a shared `verify_token` dependency backed by `djangorestframework-simplejwt`.
 
 ---
 
@@ -78,18 +144,24 @@ The platform is designed as a **Unified Monorepo**, ensuring tight coupling betw
                                     │      USER INTERFACE (PWA)        │
                                     │   (Next.js 14 / Tailwind CSS)    │
                                     └───────────────┬──────────────────┘
-                                                    │
+                                                    │  HTTP + WebSocket
                                         ┌───────────▼───────────┐
-                                        │   Intelligence API    │
-                                        │  (FastAPI / Python)   │
+                                        │  FastAPI ASGI Gateway │
+                                        │  (Routing + Auth JWT) │
                                         └───────────┬───────────┘
                                                     │
-                ┌──────────────────────────┬────────┴──────────┬──────────────────────────┐
-                │                          │                  │                          │
-      ┌─────────▼─────────┐      ┌─────────▼─────────┐      ┌─▼──────────────────┐      ┌▼──────────────────┐
-      │   Gemini Vision   │      │   Neo4j AuraDB    │      │  Firebase Core     │      │   Mesa Engine      │
-      │  (Multimodal AI)  │      │ (Knowledge Graph) │      │ (Sync & Auth)      │      │ (Strategy Sim)     │
-      └───────────────────┘      └───────────────────┘      └────────────────────┘      └────────────────────┘
+                                        ┌───────────▼───────────┐
+                                        │   Django ORM Layer    │
+                                        │  (Models/Migrations)  │
+                                        └───────────┬───────────┘
+                                                    │
+     ┌──────────────┬──────────────┬───────────────┼──────────────────┬──────────────────┐
+     │              │              │               │                  │                  │
+┌────▼────┐  ┌──────▼──────┐  ┌───▼───┐  ┌────────▼───────┐  ┌──────▼──────┐  ┌────────▼──────┐
+│ Gemini  │  │  Neo4j      │  │ Fire- │  │  PostgreSQL    │  │  Redis      │  │ Mesa Engine   │
+│ Vision  │  │  AuraDB     │  │  base │  │  (ORM Store)   │  │  (Channels) │  │ (Simulation)  │
+│ AI/NLP  │  │  (Graph DB) │  │ (PWA) │  │                │  │             │  │               │
+└─────────┘  └─────────────┘  └───────┘  └────────────────┘  └─────────────┘  └───────────────┘
 ```
 
 ### Data Flow Lifecycle
@@ -226,6 +298,49 @@ We solve the global assignment problem where:
 - **Endpoint**: `POST /api/sim/run`
 - **Description**: Single-strategy run over 1000 time-steps to find the system's breakdown point.
 
+### IV. NGO Administration (`/api/ngo`)
+
+Manages NGO-level entities: tasks, assignments, volunteer roster, and analytics dashboards. All routes require an `ngo_admin` JWT claim.
+
+- `POST /api/ngo/tasks` — Create a new need/task
+- `PATCH /api/ngo/tasks/{id}` — Update task status or metadata
+- `GET /api/ngo/assignments` — List all current assignments
+- `POST /api/ngo/assignments/{id}/reassign` — Trigger re-optimization for a single assignment
+
+### V. Volunteer Management (`/api/vol-mgmt`)
+
+Handles the volunteer lifecycle: onboarding, skill updates, availability scheduling, and live location ingestion.
+
+- `POST /api/vol-mgmt/location` — Receives GPS pings and writes to the `LiveLocationCache`
+- `PATCH /api/vol-mgmt/availability` — Updates day-of-week availability slots
+- `GET /api/vol-mgmt/leaderboard` — Returns sorted XP leaderboard for the NGO
+
+### VI. Chatbot (`/api/chatbot`)
+
+The AI coordinator assistant backed by the production chatbot stack.
+
+- **Endpoint**: `POST /api/chatbot/message`
+- **Flow**: Request passes through `guardrails → cost_control → session_cache → llm → memory → response`
+- **Rate limit**: Per-user daily token quota enforced by `cost_control.py`. Exceeding the quota returns `HTTP 429`.
+
+### VII. Analytics & Metrics (`/api/analytics`, `/api/metrics`)
+
+- `GET /api/analytics/overview` — Aggregate KPIs: tasks resolved, avg response time, volunteer utilization
+- `GET /api/metrics/health` — Internal Prometheus-style metrics for infrastructure monitoring
+
+### VIII. Guest Access (`/api/guest`)
+
+Read-only cluster for unauthenticated exploration. Issues a short-lived guest JWT via `GuestSessionMiddleware`.
+
+- `GET /api/guest/needs` — Public listing of active needs (location, type, urgency — no PII)
+- `GET /api/guest/stats` — High-level aggregate statistics for public dashboards
+
+### IX. Real-time Events (`/api/realtime`)
+
+WebSocket endpoint backed by Django Channels + Redis.
+
+- `WS /api/realtime/ws/{ngo_id}` — Pushes task-state events (`CLAIMED`, `SUBMITTED`, `VERIFIED`) to connected dashboard clients in real time
+
 ---
 
 ## 🧩 Component Encyclopedia: Frontend PWA
@@ -288,8 +403,14 @@ Gamification dashboard.
 | `NEO4J_URI` | Backend | Bolt protocol URI for AuraDB. | Critical: Grants full DB access. |
 | `GEMINI_API_KEY` | Both | Key for Google Generative AI. | High: Controls AI token usage. |
 | `NEXT_PUBLIC_BACKEND_URL` | Frontend | API root for API calls. | Low: Publicly accessible. |
-| `JWT_SECRET` | Backend | Signing secret for auth tokens. | Critical: Controls session security. |
+| `JWT_SECRET` | Backend | Signing secret for SimpleJWT auth tokens. | Critical: Controls session security. |
 | `FIREBASE_ADMIN_JSON` | Backend | Service account credentials. | Critical: Grants admin Firestore access. |
+| `DATABASE_URL` | Backend | PostgreSQL connection string (`postgres://...`). | Critical: Grants full relational DB access. |
+| `REDIS_URL` | Backend | Redis connection string for Django Channels. | High: Controls WebSocket message bus. |
+| `DJANGO_SECRET_KEY` | Backend | Django cryptographic secret. | Critical: Must be unique per environment. |
+| `USER_DAILY_TOKEN_LIMIT` | Backend | Per-user chatbot token cap (default: 20000). | Medium: Controls AI spend per user. |
+| `GLOBAL_TPM_LIMIT` | Backend | Global tokens-per-minute ceiling (default: 50000). | High: Prevents runaway LLM costs. |
+| `ALLOWED_ORIGINS` | Backend | Comma-separated CORS origin whitelist. | Medium: Prevents cross-site API abuse. |
 
 ### The "No-Mistake" Deployment Guide
 
@@ -303,8 +424,29 @@ CREATE POINT INDEX volunteer_location IF NOT EXISTS FOR (v:Volunteer) ON (v.loca
 #### 2. Vercel Configuration
 Set `Root Directory` to `apps/web`. Ensure `Framework Preset` is `Next.js`.
 
-#### 3. Render Configuration
-Set `Root Directory` to `services/backend`. Build Command: `pip install -r requirements.txt`. Start Command: `uvicorn main:app --host 0.0.0.0 --port 10000`.
+#### 3. Render / Railway Configuration
+Set `Root Directory` to `services/backend`. Build Command:
+```bash
+pip install -r requirements.txt && python manage.py migrate --noinput
+```
+Start Command (ASGI with WebSocket support):
+```bash
+daphne -b 0.0.0.0 -p 10000 config.asgi:application
+```
+
+> **Note**: If WebSockets are not required, `uvicorn main:app --host 0.0.0.0 --port 10000` still works but will not serve Django Channels consumers.
+
+#### 4. Local Development
+```bash
+# Install dependencies
+pip install -r services/backend/requirements.txt
+
+# Run Django migrations
+python services/backend/manage.py migrate
+
+# Start the ASGI server
+cd services/backend && daphne config.asgi:application
+```
 
 ---
 
@@ -433,16 +575,28 @@ To maintain a "flawless" state, we adhere to the following 10 Commandments of Sa
 
 ## 🚀 The Future: Sanchaalan Saathi Roadmap
 
-### Level 1: Foundation (Current)
+### Level 1: Foundation ✅
 - [x] Multimodal Ingestion Pipeline.
-- [x] Global Matcher Engine.
+- [x] Global Matcher Engine (Hungarian Algorithm).
 - [x] Unified NGO/Volunteer PWA.
 
-### Level 2: Scalability (Q3 2026)
+### Level 2: Production Hardening ✅ (v2.0 — May 2026)
+- [x] **Django + FastAPI Hybrid**: Full ORM, migrations, and admin panel.
+- [x] **PostgreSQL Integration**: Durable relational storage for users, tasks, and assignments.
+- [x] **Advanced Optimization Engine**: Modular solver stack (Hungarian + Greedy + Reoptimization).
+- [x] **Production Chatbot Stack**: Token cost control, guardrails, session cache, observability.
+- [x] **Live Location Cache**: Write-buffered GPS tracking with batch DB flushes.
+- [x] **WebSocket Real-time Layer**: Django Channels + Redis for sub-100ms event push.
+- [x] **Guest Mode**: Read-only public access with short-lived session tokens.
+- [x] **RBAC Middleware**: Role-based access enforcement across all API routes.
+- [x] **Volunteer Registration Upgrade**: Multi-step onboarding with availability scheduling.
+
+### Level 3: Scalability (Q4 2026)
 - [ ] **Offline-First Mode**: LocalStorage buffering for reports captured in zero-signal zones.
 - [ ] **Multi-NGO Federation**: Allowing NGOs to pool volunteers during national emergencies.
+- [ ] **Celery Task Queue**: Offload heavy matching jobs for large-scale deployments.
 
-### Level 3: Predictive Intelligence (Q1 2027)
+### Level 4: Predictive Intelligence (Q1 2027)
 - [ ] **Climate Bridge**: Ingesting live weather data to predict flood-prone "Need" zones before reports arrive.
 - [ ] **Autonomous Dispatch**: Deploying drone-based vision verification.
 
@@ -654,15 +808,24 @@ In the `NGODashboard`, this function is called inside an 30-second interval. It 
 The entry point for the FastAPI microservice. It is designed for **Horizontal Scalability**.
 
 ### Middleware Stack:
-1.  **CORS Middleware**: Strict white-listing of the `NEXT_PUBLIC_FRONTEND_URL`.
-2.  **Timing Middleware**: Logs the processing time for every request (used for performance debugging).
-3.  **Exception Handler**: Global `catch-all` that converts Pydantic validation errors into clean JSON responses.
+1.  **CORS Middleware**: Strict allowlist sourced from `FRONTEND_URL` + `ALLOWED_ORIGINS` env vars.
+2.  **GuestSessionMiddleware**: Issues and validates short-lived guest JWTs; blocks guest tokens from reaching protected routes.
+3.  **RBACMiddleware** (`middleware/rbac.py`): Enforces role claims (`ngo_admin`, `volunteer`, `guest`) on each route.
+4.  **Timing Middleware**: Attaches `X-Process-Time` header and logs latency per request.
+5.  **Exception Handler**: Converts Pydantic `ValidationError` and unhandled exceptions into clean JSON `{ "detail": ... }` responses.
 
 ### Route Modularization:
-We use `APIRouter` to shard the codebase into manageable domains:
-- `/api/ingest`: Writing to the graph.
-- `/api/auth`: Identity management.
-- `/api/sim`: Heavy mathematical workloads.
+We use `APIRouter` to shard the codebase into 10 domains:
+- `/api/ingest`: Writing to the knowledge graph.
+- `/api/auth`: Firebase → SimpleJWT identity exchange.
+- `/api/ngo`: NGO admin operations (tasks, assignments).
+- `/api/vol-mgmt`: Volunteer lifecycle and live location.
+- `/api/graph`: Neo4j hotspot discovery and NLP→Cypher QA.
+- `/api/chatbot`: AI coordinator assistant.
+- `/api/sim`: Heavy Monte Carlo simulation workloads.
+- `/api/analytics` + `/api/metrics`: Reporting and infrastructure health.
+- `/api/guest`: Unauthenticated read-only access.
+- `/api/realtime`: WebSocket event push.
 
 ---
 
@@ -819,9 +982,10 @@ In this section, we provide an exhaustive architectural review of every critical
 ### 📍 Backend Layer (`services/backend`)
 
 #### 1. `main.py`
-- **Framework**: FastAPI (Asynchronous Server Gateway Interface).
-- **Architecture**: Domain-sharded routing.
-- **Security**: Implements a `verify_token` dependency that decodes the JWT and verifies the `ngo_id` against the request parameters.
+- **Framework**: FastAPI v2.0 + Django ORM hybrid (served via Daphne ASGI).
+- **Architecture**: Domain-sharded routing across 10 API clusters: `ingest`, `auth`, `ngo`, `vol-mgmt`, `graph`, `sim`, `chatbot`, `analytics`, `metrics`, `guest`, `realtime`.
+- **Startup Lifecycle**: `lifespan()` handler runs `LiveLocationCache.startup()`, `neo4j_service.initialize_schema()`, and `init_db()` (PostgreSQL migrations) on boot.
+- **Security**: `verify_token` dependency decodes the SimpleJWT token and enforces `ngo_id` claim scoping. `GuestSessionMiddleware` gates unauthenticated traffic to the `/api/guest` cluster only.
 
 #### 2. `engine/matcher.py`
 - **Algorithm**: scipy-based Hungarian Algorithm.

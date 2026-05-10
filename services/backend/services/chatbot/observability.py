@@ -22,7 +22,7 @@ def mask_pii(text: Any) -> str:
 class OTELJsonFormatter(logging.Formatter):
     def format(self, record):
         log_entry = {
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z",
             "level": record.levelname,
             "message": mask_pii(record.getMessage()),
             "logger": record.name,

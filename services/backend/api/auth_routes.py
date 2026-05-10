@@ -1,14 +1,20 @@
-import random
+import secrets
 import string
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from middleware.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+
+def _now() -> datetime:
+    """Return current UTC time as a naive datetime (matches DB storage convention)."""
+    return datetime.now(tz=timezone.utc).replace(tzinfo=None)
 
 from api.schemas import AuthResponse
 from db.base import get_db
@@ -17,18 +23,20 @@ from db.models import (
     Task, Assignment, Event, Resource, Notification,
 )
 from utils.auth_utils import hash_password, verify_password, create_token
+from utils.errors import safe_http_error
 from middleware.rbac import get_current_user, CurrentUser
 
 router = APIRouter()
 
 
 def _random_code(length: int = 8) -> str:
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 async def _seed_ngo_demo_data(admin_user_id: str, ngo_id: str, db: AsyncSession) -> None:
     """Seed realistic mock data for a guest NGO admin demo session."""
-    now = datetime.utcnow()
+    now = _now()
 
     # ── 5 volunteer users + profiles ────────────────────────────────────────
     vol_specs = [
@@ -139,7 +147,7 @@ async def _seed_ngo_demo_data(admin_user_id: str, ngo_id: str, db: AsyncSession)
 
 async def _seed_volunteer_demo_data(vol_user_id: str, ngo_id: str, db: AsyncSession) -> None:
     """Seed tasks and assignments for a guest volunteer demo session."""
-    now = datetime.utcnow()
+    now = _now()
 
     # ── open tasks in NGO ────────────────────────────────────────────────────
     open_task_specs = [
@@ -248,9 +256,9 @@ class LoginReq(BaseModel):
 
 
 class GoogleAuthReq(BaseModel):
-    email:        EmailStr
-    firebase_uid: str
-    role:         str = Field(..., pattern="^(ngo_admin|volunteer)$")
+    email:             EmailStr
+    firebase_id_token: str          # raw Firebase ID token — verified server-side
+    role:              str = Field(..., pattern="^(ngo_admin|volunteer)$")
     invite_code:  str | None = None
     full_name:   str | None = Field(None, max_length=200)
     phone:       str | None = Field(None, max_length=30)
@@ -284,7 +292,8 @@ def _record_consent_events(user_id: str, req: SignupReq | GoogleAuthReq, db: Asy
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @router.post("/signup", response_model=AuthResponse)
-async def signup(req: SignupReq, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def signup(request: Request, req: SignupReq, db: AsyncSession = Depends(get_db)):
     # Duplicate email check
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
@@ -309,7 +318,7 @@ async def signup(req: SignupReq, db: AsyncSession = Depends(get_db)):
             consent_analytics=req.consent_analytics,
             consent_personalization=req.consent_personalization,
             consent_ai_training=req.consent_ai_training,
-            profile_completed_at=datetime.utcnow() if req.full_name and req.phone and req.city else None,
+            profile_completed_at=_now() if req.full_name and req.phone and req.city else None,
         )
         db.add(user)
         await db.flush()  # get user.id before commit
@@ -364,29 +373,31 @@ async def signup(req: SignupReq, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/guest", response_model=AuthResponse)
-async def guest_login(db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/hour")
+async def guest_login(request: Request, db: AsyncSession = Depends(get_db)):
     """
-    Guest Mode (for Hackathon Admin)
-    Creates a temporary user and a temporary NGO to grant immediate full-platform access.
+    Guest Mode — creates an isolated demo NGO with seeded data.
+    Disable in production by setting ENABLE_GUEST_MODE=false.
     """
+    import os as _os
+    if _os.getenv("ENABLE_GUEST_MODE", "true").lower() == "false":
+        raise HTTPException(status_code=403, detail="Guest mode is disabled")
+
     import uuid
     unique_suffix = str(uuid.uuid4())[:8]
     guest_email = f"guest_{unique_suffix}@synapseai.hackathon"
-    
-    # 1. Create the dummy NGO
+
     ngo_code = _random_code()
     from db.models import NGO, User
-    
-    # Needs a dummy user_id for created_by in NGO constraint, but User needs ngo_id
-    # We create user first with no ngo_id, then ngo, then update user.
+
     user = User(
         email=guest_email,
-        password_hash=hash_password("guest_password123"),
+        password_hash=hash_password(secrets.token_hex(24)),  # non-guessable; login not needed
         role="ngo_admin",
         ngo_id=None,
-        full_name="Hackathon Guest",
-        phone="555-0000",
-        profile_completed_at=datetime.utcnow()
+        full_name="Demo Admin",
+        phone=None,
+        profile_completed_at=_now()
     )
     db.add(user)
     await db.flush()
@@ -417,7 +428,8 @@ async def guest_login(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/guest-volunteer", response_model=AuthResponse)
-async def guest_volunteer_login(db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/hour")
+async def guest_volunteer_login(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Guest Volunteer Mode (for Hackathon Demo)
     Creates a temporary volunteer account with a demo NGO and pre-seeded tasks/assignments.
@@ -429,12 +441,12 @@ async def guest_volunteer_login(db: AsyncSession = Depends(get_db)):
     # 1. Create volunteer user first so we have a real ID for NGO.created_by
     vol_user = User(
         email=guest_email,
-        password_hash=hash_password("guest_password123"),
+        password_hash=hash_password(secrets.token_hex(24)),  # non-guessable
         role="volunteer",
-        ngo_id=None,                       # linked to NGO after it's created
+        ngo_id=None,
         full_name="Demo Volunteer",
-        phone="+919876543210",
-        profile_completed_at=datetime.utcnow(),
+        phone=None,
+        profile_completed_at=_now(),
     )
     db.add(vol_user)
     await db.flush()                       # get vol_user.id
@@ -524,12 +536,13 @@ async def create_ngo(
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(req: LoginReq, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login(request: Request, req: LoginReq, db: AsyncSession = Depends(get_db)):
     user = (await db.execute(select(User).where(User.email == req.email))).scalar_one_or_none()
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = _now()
     await db.commit()
     token = create_token(user.id, user.role, user.ngo_id, user.email)
     return {
@@ -541,15 +554,23 @@ async def login(req: LoginReq, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/google", response_model=AuthResponse)
-async def google_auth(req: GoogleAuthReq, db: AsyncSession = Depends(get_db)):
-    """Google Sign-In: find or create user by email, return JWT. No password needed."""
+@limiter.limit("5/minute")
+async def google_auth(request: Request, req: GoogleAuthReq, db: AsyncSession = Depends(get_db)):
+    """Google Sign-In: verify Firebase ID token server-side, find or create user, return JWT."""
+    # Server-side Firebase token verification — prevents uid forgery
+    try:
+        import firebase_admin.auth as fb_auth
+        decoded = fb_auth.verify_id_token(req.firebase_id_token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Firebase token")
+    if decoded.get("email", "").lower() != str(req.email).lower():
+        raise HTTPException(status_code=401, detail="Token email does not match request email")
     try:
         return await _google_auth_inner(req, db)
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("google_auth unexpected error: %s", exc, exc_info=True)
-        raise HTTPException(status_code=503, detail=f"Service unavailable: {exc}")
+        raise safe_http_error(503, "Service temporarily unavailable", exc, "google_auth")
 
 
 async def _google_auth_inner(req: GoogleAuthReq, db: AsyncSession):
@@ -557,7 +578,7 @@ async def _google_auth_inner(req: GoogleAuthReq, db: AsyncSession):
 
     if user:
         # Existing user — return token regardless of how they originally signed up
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = _now()
         token = create_token(user.id, user.role, user.ngo_id, user.email)
         return {
             "token": token,
@@ -587,7 +608,7 @@ async def _google_auth_inner(req: GoogleAuthReq, db: AsyncSession):
                 consent_analytics=req.consent_analytics,
                 consent_personalization=req.consent_personalization,
                 consent_ai_training=req.consent_ai_training,
-                profile_completed_at=datetime.utcnow() if req.full_name and req.phone and req.city else None,
+                profile_completed_at=_now() if req.full_name and req.phone and req.city else None,
             )
             db.add(user)
             await db.flush()
@@ -667,7 +688,8 @@ async def _google_auth_inner(req: GoogleAuthReq, db: AsyncSession):
 
 
 @router.get("/check-email", response_model=CheckEmailResponse)
-async def check_email(email: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def check_email(request: Request, email: str, db: AsyncSession = Depends(get_db)):
     """Public — no auth. Returns whether email is registered and their role/ngo_id."""
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if not user:
@@ -676,12 +698,25 @@ async def check_email(email: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/logout")
-async def logout():
-    return {"message": "Logged out — delete token client-side"}
+async def logout(
+    creds: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
+):
+    """Revoke the current JWT by adding its jti to the Redis blacklist."""
+    if creds:
+        try:
+            from utils.auth_utils import decode_token, blacklist_token, EXPIRE_MINS
+            payload = decode_token(creds.credentials)
+            jti = payload.get("jti")
+            if jti:
+                await blacklist_token(jti, EXPIRE_MINS * 60)
+        except Exception:
+            pass  # always return success; don't leak token details
+    return {"message": "Logged out successfully"}
 
 
 @router.get("/ngo/lookup/{invite_code}")
-async def lookup_ngo(invite_code: str, db: AsyncSession = Depends(get_db)):
+@limiter.limit("30/minute")
+async def lookup_ngo(request: Request, invite_code: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(NGO).where(NGO.invite_code == invite_code.upper()))
     ngo = result.scalar_one_or_none()
     if not ngo:

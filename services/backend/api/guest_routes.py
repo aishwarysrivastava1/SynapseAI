@@ -24,7 +24,7 @@ async def _ensure_guest_exists(db: AsyncSession, guest_id: str):
         # Keep alive
         await db.execute(
             update(Guest).where(Guest.id == guest_id)
-            .values(last_active_at=datetime.datetime.utcnow())
+            .values(last_active_at=datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None))
         )
         await db.commit()
 

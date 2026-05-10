@@ -5,7 +5,7 @@ import os
 import json
 import base64
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 try:
     import yaml as _yaml
 except ImportError:
@@ -163,7 +163,7 @@ class FirebaseService:
                 "title": title,
                 "message": message,
                 "type": n_type,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(tz=timezone.utc).replace(tzinfo=None),
                 "read": False
             })
             logger.info(f"Notification added: {title}")
@@ -192,7 +192,7 @@ class FirebaseService:
                     "lng": float(lng),
                     "name": need_data.get("location_name", "Unknown Area"),
                 },
-                "reported_at": datetime.utcnow(),
+                "reported_at": datetime.now(tz=timezone.utc).replace(tzinfo=None),
                 "tasks_spawned": 0,
             })
             logger.info(f"Need synced to Firestore: {need_id}")
@@ -206,7 +206,7 @@ class FirebaseService:
         try:
             self.db.collection("needs").document(need_id).update({
                 "status": status,
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(tz=timezone.utc).replace(tzinfo=None),
             })
         except Exception as e:
             logger.error(f"Failed to update need status in Firestore: {e}")
@@ -225,7 +225,7 @@ class FirebaseService:
                 "title": f"Need: {need_data.get('type', 'Unknown').upper()}",
                 "description": need_data.get("description", ""),
                 "status": "OPEN",
-                "createdAt": datetime.utcnow(),
+                "createdAt": datetime.now(tz=timezone.utc).replace(tzinfo=None),
                 "urgency": float(need_data.get("urgency_score", 0.5)),
                 "location": {
                     "lat": float(lat),
@@ -249,7 +249,7 @@ class FirebaseService:
                 "type": event_type,
                 "title": title,
                 "description": description,
-                "timestamp": datetime.utcnow(),
+                "timestamp": datetime.now(tz=timezone.utc).replace(tzinfo=None),
                 "metadata": metadata or {},
             })
         except Exception as e:

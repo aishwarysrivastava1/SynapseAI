@@ -23,7 +23,7 @@ class NGO(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     invite_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
     created_by:  Mapped[str] = mapped_column(String(36), ForeignKey("users.id", use_alter=True, name="fk_ngo_created_by"), nullable=False)
-    created_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     sector:      Mapped[str | None] = mapped_column(String(120), nullable=True)
     website:     Mapped[str | None] = mapped_column(String(300), nullable=True)
     headquarters_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -32,7 +32,7 @@ class NGO(Base):
     operating_regions: Mapped[list] = mapped_column(JSON, default=list)
     mission_focus: Mapped[list] = mapped_column(JSON, default=list)
     updated_at:  Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
 
 
@@ -51,7 +51,7 @@ class User(Base):
     ngo_id:        Mapped[str | None] = mapped_column(
         String(36), ForeignKey("ngos.id"), nullable=True
     )
-    created_at:    Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:    Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     full_name:     Mapped[str | None] = mapped_column(String(200), nullable=True)
     phone:         Mapped[str | None] = mapped_column(String(30), nullable=True)
     preferred_language: Mapped[str] = mapped_column(String(32), default="en")
@@ -121,9 +121,9 @@ class Task(Base):
     deadline:        Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     lat:             Mapped[float | None] = mapped_column(Float, nullable=True)
     lng:             Mapped[float | None] = mapped_column(Float, nullable=True)
-    created_at:      Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:      Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     updated_at:      Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
     task_category:   Mapped[str | None] = mapped_column(String(100), nullable=True)
     estimated_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -150,11 +150,11 @@ class Assignment(Base):
     status:       Mapped[str] = mapped_column(
         SAEnum("assigned", "accepted", "rejected", "completed", name="assign_status"), default="assigned"
     )
-    assigned_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    assigned_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     accepted_at:  Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at:   Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
     hours_spent:  Mapped[float | None] = mapped_column(Float, nullable=True)
     completion_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -213,7 +213,7 @@ class Event(Base):
     status:         Mapped[str] = mapped_column(
         SAEnum("upcoming", "active", "completed", name="event_status"), default="upcoming"
     )
-    created_at:     Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:     Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
 
 
 class EventAttendance(Base):
@@ -241,7 +241,7 @@ class Notification(Base):
         SAEnum("task_assigned", "status_update", "general", name="notif_type"), default="general"
     )
     is_read:    Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
 
 
 # ── Task Enrollment Requests ──────────────────────────────────────────────────
@@ -264,7 +264,7 @@ class TaskEnrollmentRequest(Base):
     status:       Mapped[str] = mapped_column(
         SAEnum("pending", "approved", "rejected", name="enroll_status"), default="pending"
     )
-    created_at:   Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:   Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
 
 
 # ── Consent & Chatbot Telemetry ─────────────────────────────────────────────
@@ -283,7 +283,7 @@ class ConsentEvent(Base):
     )
     granted:    Mapped[bool] = mapped_column(Boolean, nullable=False)
     source:     Mapped[str] = mapped_column(String(60), default="ui")
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
 
 
 class ChatbotSession(Base):
@@ -300,7 +300,7 @@ class ChatbotSession(Base):
     channel:     Mapped[str] = mapped_column(String(40), default="web")
     language:    Mapped[str] = mapped_column(String(32), default="en")
     context_tags: Mapped[list] = mapped_column(JSON, default=list)
-    created_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     ended_at:    Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -322,7 +322,7 @@ class ChatbotMessage(Base):
     prompt_features: Mapped[dict] = mapped_column(JSON, default=dict)
     latency_ms:  Mapped[int | None] = mapped_column(Integer, nullable=True)
     user_feedback: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at:  Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
 
 # ── Guests ───────────────────────────────────────────────────────────────────
 
@@ -330,8 +330,8 @@ class Guest(Base):
     __tablename__ = "guests"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_id)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
-    last_active_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+    last_active_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     is_converted_to_user: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
@@ -342,7 +342,7 @@ class GuestData(Base):
     guest_id: Mapped[str] = mapped_column(String(36), ForeignKey("guests.id"), unique=True, index=True)
     data: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
 
 class ChatbotSemanticCache(Base):
@@ -360,9 +360,9 @@ class ChatbotSemanticCache(Base):
     reply_text: Mapped[str] = mapped_column(Text, nullable=False)
     intent_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     hits: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
 
 class TokenUsageCounter(Base):
@@ -378,9 +378,9 @@ class TokenUsageCounter(Base):
     session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     requests_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )
 class GlobalResourceCounter(Base):
     __tablename__ = "global_resource_counters"
@@ -396,5 +396,5 @@ class GlobalResourceCounter(Base):
     current_value: Mapped[int] = mapped_column(Integer, default=0)
     expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow
+        DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     )

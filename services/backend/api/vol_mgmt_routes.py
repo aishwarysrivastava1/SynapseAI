@@ -7,9 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func
 
+from api.schemas import PaginationParams, VolunteerProfileResponse, make_paginated
 from db.base import get_db
 from db.models import User, VolunteerProfile, Task, Assignment, Notification, TaskEnrollmentRequest
-from api.schemas import VolunteerProfileResponse
 from middleware.consent import require_ai_training_consent
 from middleware.rbac import CurrentUser, require_volunteer
 from services.assignment_dispatcher import dispatch_optimized_assignments
@@ -256,11 +256,11 @@ async def update_profile(
     filled_scalar = sum(1 for v in profile_fields if v)
     filled_lists = sum(1 for v in list_fields if v and len(v) > 0)
     p.profile_completeness_score = round(((filled_scalar + filled_lists) / 13) * 100, 1)
-    p.last_active_at = dt.datetime.utcnow()
+    p.last_active_at = dt.datetime.now(tz=dt.timezone.utc).replace(tzinfo=None)
 
     u = await db.get(User, user.user_id)
     if u and p.profile_completeness_score >= 60 and not u.profile_completed_at:
-        u.profile_completed_at = dt.datetime.utcnow()
+        u.profile_completed_at = dt.datetime.now(tz=dt.timezone.utc).replace(tzinfo=None)
     return {"message": "Profile updated"}
 
 
@@ -268,20 +268,25 @@ async def update_profile(
 
 @router.get("/tasks")
 async def get_my_tasks(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_volunteer),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = (await db.execute(
+    base_q = (
         select(Task, Assignment)
         .join(Assignment, Assignment.task_id == Task.id)
-        .where(
-            Assignment.volunteer_id == user.user_id,
-            Assignment.ngo_id == user.ngo_id,
-        )
-        .order_by(Assignment.assigned_at.desc())
+        .where(Assignment.volunteer_id == user.user_id, Assignment.ngo_id == user.ngo_id)
+    )
+    total = (await db.execute(
+        select(func.count()).select_from(base_q.subquery())
+    )).scalar() or 0
+
+    rows = (await db.execute(
+        base_q.order_by(Assignment.assigned_at.desc())
+               .offset(pagination.offset).limit(pagination.page_size)
     )).fetchall()
 
-    return [
+    items = [
         {
             "task_id":           t.id,
             "title":             t.title,
@@ -295,24 +300,33 @@ async def get_my_tasks(
         }
         for t, a in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.get("/assignments")
 async def get_my_assignments(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_volunteer),
     db: AsyncSession = Depends(get_db),
 ):
+    q = select(Assignment).where(
+        Assignment.volunteer_id == user.user_id,
+        Assignment.ngo_id == user.ngo_id,
+    )
+    total = (await db.execute(
+        select(func.count()).select_from(q.subquery())
+    )).scalar() or 0
+
     rows = (await db.execute(
-        select(Assignment).where(
-            Assignment.volunteer_id == user.user_id,
-            Assignment.ngo_id == user.ngo_id,
-        )
-        .order_by(Assignment.assigned_at.desc())
+        q.order_by(Assignment.assigned_at.desc())
+          .offset(pagination.offset).limit(pagination.page_size)
     )).scalars().all()
-    return [
+
+    items = [
         {"id": a.id, "task_id": a.task_id, "status": a.status, "assigned_at": a.assigned_at}
         for a in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/assignments/{assignment_id}/accept")
@@ -336,7 +350,7 @@ async def accept_assignment(
         raise HTTPException(status_code=400, detail=f"Cannot accept — current status: {a.status}")
 
     a.status = "accepted"
-    a.accepted_at = dt.datetime.utcnow()
+    a.accepted_at = dt.datetime.now(tz=dt.timezone.utc).replace(tzinfo=None)
 
     # Notify NGO admin
     task = await db.get(Task, a.task_id)
@@ -416,7 +430,7 @@ async def complete_assignment(
         raise HTTPException(status_code=400, detail=f"Cannot complete — current status: {a.status}")
 
     a.status = "completed"
-    a.completed_at = dt.datetime.utcnow()
+    a.completed_at = dt.datetime.now(tz=dt.timezone.utc).replace(tzinfo=None)
 
     task = await db.get(Task, a.task_id)
     task_completed = False
@@ -486,19 +500,27 @@ async def get_recommendations(
 
 @router.get("/notifications")
 async def get_notifications(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_volunteer),
     db: AsyncSession = Depends(get_db),
 ):
+    total = (await db.execute(
+        select(func.count()).select_from(Notification)
+        .where(Notification.user_id == user.user_id)
+    )).scalar() or 0
+
     rows = (await db.execute(
         select(Notification)
         .where(Notification.user_id == user.user_id)
         .order_by(Notification.is_read.asc(), Notification.created_at.desc())
-        .limit(50)
+        .offset(pagination.offset).limit(pagination.page_size)
     )).scalars().all()
-    return [
+
+    items = [
         {"id": n.id, "message": n.message, "type": n.type, "is_read": n.is_read, "created_at": n.created_at}
         for n in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.put("/location")
@@ -623,7 +645,7 @@ async def send_sos(
             "message": message,
             "lat": lat,
             "lng": lng,
-            "created_at": dt.datetime.utcnow().isoformat() + "Z",
+            "created_at": dt.datetime.now(tz=dt.timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         },
     )
     return {"status": "sent", "notified": len(admins)}
@@ -631,6 +653,7 @@ async def send_sos(
 
 @router.get("/open-tasks")
 async def get_open_tasks(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_volunteer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -639,9 +662,14 @@ async def get_open_tasks(
     )).scalar_one_or_none()
     vol_skills = {s.lower() for s in (profile.skills or [])} if profile else set()
 
+    base_q = select(Task).where(Task.ngo_id == user.ngo_id, Task.status == "open")
+    total = (await db.execute(
+        select(func.count()).select_from(base_q.subquery())
+    )).scalar() or 0
+
     tasks = (await db.execute(
-        select(Task).where(Task.ngo_id == user.ngo_id, Task.status == "open")
-        .order_by(Task.created_at.desc())
+        base_q.order_by(Task.created_at.desc())
+               .offset(pagination.offset).limit(pagination.page_size)
     )).scalars().all()
 
     # Get this volunteer's existing requests
@@ -653,12 +681,12 @@ async def get_open_tasks(
     )).scalars().all()
     req_map = {r.task_id: r.status for r in req_rows}
 
-    result = []
+    items = []
     for t in tasks:
         required = t.required_skills or []
         matched = [s for s in required if s.lower() in vol_skills]
         score = round(len(matched) / max(len(required), 1), 3)
-        result.append({
+        items.append({
             "id":              t.id,
             "title":           t.title,
             "description":     t.description,
@@ -670,7 +698,7 @@ async def get_open_tasks(
             "matched_skills":  matched,
             "request_status":  req_map.get(t.id),
         })
-    return result
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/tasks/{task_id}/enroll")
@@ -720,16 +748,25 @@ async def enroll_task(
 
 @router.get("/enrollment-requests")
 async def get_my_enrollment_requests(
+    pagination: PaginationParams = Depends(),
     user: CurrentUser = Depends(require_volunteer),
     db: AsyncSession = Depends(get_db),
 ):
-    rows = (await db.execute(
+    base_q = (
         select(TaskEnrollmentRequest, Task)
         .join(Task, Task.id == TaskEnrollmentRequest.task_id)
         .where(TaskEnrollmentRequest.volunteer_id == user.user_id)
-        .order_by(TaskEnrollmentRequest.created_at.desc())
+    )
+    total = (await db.execute(
+        select(func.count()).select_from(base_q.subquery())
+    )).scalar() or 0
+
+    rows = (await db.execute(
+        base_q.order_by(TaskEnrollmentRequest.created_at.desc())
+               .offset(pagination.offset).limit(pagination.page_size)
     )).fetchall()
-    return [
+
+    items = [
         {
             "id":         r.id,
             "task_id":    r.task_id,
@@ -741,6 +778,7 @@ async def get_my_enrollment_requests(
         }
         for r, t in rows
     ]
+    return make_paginated(items, total, pagination)
 
 
 @router.post("/notifications/{notif_id}/read")

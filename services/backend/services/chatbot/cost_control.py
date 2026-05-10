@@ -1,123 +1,90 @@
-import os
+﻿import os
 import datetime
 import logging
-from typing import Optional
-from sqlalchemy import select, update, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
-from db.models import TokenUsageCounter, GlobalResourceCounter
+
+from asgiref.sync import sync_to_async
 
 logger = logging.getLogger(__name__)
 
-# Environment-driven dynamic configuration
 USER_DAILY_TOKEN_LIMIT = int(os.getenv("USER_DAILY_TOKEN_LIMIT", 20000))
 GLOBAL_TPM_LIMIT = int(os.getenv("GLOBAL_TPM_LIMIT", 50000))
 
+
+@sync_to_async
+def _get_or_create_daily_usage(identifier: str, date_stamp) -> tuple:
+    from apps.chatbot.models import TokenUsageCounter
+    obj, created = TokenUsageCounter.objects.get_or_create(
+        identifier=identifier, date_stamp=date_stamp,
+        defaults={"total_tokens": 0, "requests_count": 0},
+    )
+    return obj, created
+
+
+@sync_to_async
+def _increment_usage(identifier: str, date_stamp, tokens: int) -> int:
+    from django.db.models import F
+    from apps.chatbot.models import TokenUsageCounter
+    obj, _ = TokenUsageCounter.objects.get_or_create(
+        identifier=identifier, date_stamp=date_stamp,
+        defaults={"total_tokens": 0, "requests_count": 0},
+    )
+    TokenUsageCounter.objects.filter(id=obj.id).update(
+        total_tokens=F("total_tokens") + tokens,
+        requests_count=F("requests_count") + 1,
+    )
+    obj.refresh_from_db()
+    return obj.total_tokens
+
+
+@sync_to_async
+def _increment_global_tpm(tokens: int) -> int:
+    from django.db.models import F
+    from apps.chatbot.models import GlobalResourceCounter
+    now = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).replace(second=0, microsecond=0)
+    obj, _ = GlobalResourceCounter.objects.get_or_create(
+        resource_key="gemini_tpm", timestamp_minute=now,
+        defaults={"current_value": 0},
+    )
+    GlobalResourceCounter.objects.filter(id=obj.id).update(
+        current_value=F("current_value") + tokens
+    )
+    obj.refresh_from_db()
+    return obj.current_value
+
+
+@sync_to_async
+def _check_global_tpm() -> int:
+    from apps.chatbot.models import GlobalResourceCounter
+    now = datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None).replace(second=0, microsecond=0)
+    obj = GlobalResourceCounter.objects.filter(
+        resource_key="gemini_tpm", timestamp_minute=now
+    ).first()
+    return obj.current_value if obj else 0
+
+
 class DynamicCostTracker:
-    @staticmethod
-    async def increment_global_tpm(db: AsyncSession, tokens: int) -> int:
-        """
-        Atomically increment the global TPM counter in PostgreSQL.
-        Returns the new total for the current minute.
-        """
-        now = datetime.datetime.utcnow().replace(second=0, microsecond=0)
-        stmt = (
-            insert(GlobalResourceCounter)
-            .values(
-                resource_key="gemini_tpm",
-                timestamp_minute=now,
-                current_value=tokens
-            )
-            .on_conflict_do_update(
-                constraint="uq_res_ts",
-                set_={"current_value": GlobalResourceCounter.current_value + tokens}
-            )
-            .returning(GlobalResourceCounter.current_value)
-        )
-        try:
-            result = await db.execute(stmt)
-            val = result.scalar() or tokens
-            if val >= GLOBAL_TPM_LIMIT:
-                logger.error(f"GLOBAL TPM LIMIT HIT: {val} >= {GLOBAL_TPM_LIMIT}. System throttling engaged.")
-            return val
-        except Exception as e:
-            logger.error(f"Failed to increment global TPM: {e}")
-            return 0
+    def __init__(self, identifier: str):
+        self.identifier = identifier
 
-    @staticmethod
-    async def is_cost_blocked(db: AsyncSession) -> bool:
-        """
-        Check if the global TPM for the current minute is already over the limit.
-        """
-        now = datetime.datetime.utcnow().replace(second=0, microsecond=0)
-        stmt = select(GlobalResourceCounter.current_value).where(
-            GlobalResourceCounter.resource_key == "gemini_tpm",
-            GlobalResourceCounter.timestamp_minute == now
-        )
-        try:
-            result = await db.execute(stmt)
-            val = result.scalar() or 0
-            return val >= GLOBAL_TPM_LIMIT
-        except Exception:
+    async def check_and_reserve(self, estimated_tokens: int = 500) -> bool:
+        today = datetime.date.today()
+        obj, _ = await _get_or_create_daily_usage(self.identifier, today)
+        if obj.total_tokens + estimated_tokens > USER_DAILY_TOKEN_LIMIT:
+            logger.warning("User %s daily token limit hit", self.identifier)
             return False
+        tpm = await _check_global_tpm()
+        if tpm >= GLOBAL_TPM_LIMIT:
+            logger.error("Global TPM limit hit: %s", tpm)
+            return False
+        return True
 
-    @staticmethod
-    async def check_user_budget(db: AsyncSession, identifier: str) -> bool:
-        """
-        Verify if an individual user has blown past their specific daily allocation.
-        """
-        if not db:
-            return True # Ephemeral mode doesn't track DB limits
-            
-        today = datetime.datetime.utcnow().date()
-        stmt = select(TokenUsageCounter.total_tokens).where(
-            TokenUsageCounter.identifier == identifier,
-            TokenUsageCounter.date_stamp == today
-        )
-        try:
-            result = await db.execute(stmt)
-            total = result.scalar() or 0
-            if total > USER_DAILY_TOKEN_LIMIT:
-                logger.warning(f"User {identifier} exceeded daily token budget ({total} > {USER_DAILY_TOKEN_LIMIT})")
-                return False
-            return True
-        except Exception:
-            return True
+    async def record_usage(self, tokens_used: int) -> None:
+        today = datetime.date.today()
+        new_total = await _increment_usage(self.identifier, today, tokens_used)
+        await _increment_global_tpm(tokens_used)
+        if new_total > USER_DAILY_TOKEN_LIMIT * 0.8:
+            logger.warning("User %s at 80%% daily token limit: %s", self.identifier, new_total)
 
-    @staticmethod
-    async def record_usage(db: AsyncSession, identifier: str, session_id: str, tokens: int):
-        """
-        Record usage natively per user and increment global TPM.
-        """
-        # 1. Increment Global TPM
-        await DynamicCostTracker.increment_global_tpm(db, tokens)
-        
-        # 2. Update User Daily Budget
-        if not db:
-            return 
-
-        today = datetime.datetime.utcnow().date()
-        stmt = (
-            insert(TokenUsageCounter)
-            .values(
-                identifier=identifier,
-                date_stamp=today,
-                session_id=session_id,
-                total_tokens=tokens,
-                requests_count=1
-            )
-            .on_conflict_do_update(
-                index_elements=["identifier", "date_stamp"],
-                set_={
-                    "total_tokens": TokenUsageCounter.total_tokens + tokens,
-                    "requests_count": TokenUsageCounter.requests_count + 1,
-                    "updated_at": datetime.datetime.utcnow()
-                }
-            )
-        )
-        try:
-            await db.execute(stmt)
-            await db.commit()
-        except Exception as e:
-            logger.error(f"Failed to record token usage: {e}")
-            await db.rollback()
+    async def is_cost_blocked(self) -> bool:
+        tpm = await _check_global_tpm()
+        return tpm >= GLOBAL_TPM_LIMIT

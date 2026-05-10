@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Header, Depends
 from services.neo4j_service import neo4j_service
 from services.firebase_service import firebase_service
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,7 +42,7 @@ async def seed_graph():
                     success_count += 1
                 except Exception as qe:
                     logger.warning(f"Seed query skipped (non-fatal): {qe}")
-                    errors.append(str(qe)[:120])
+                    errors.append(1)  # count only; never expose query error text
 
         logger.info(f"Graph seeded: {success_count} statements executed, {len(errors)} skipped")
 
@@ -104,14 +104,14 @@ async def _seed_firestore_demo():
     batch = firebase_service.db.batch()
     for need in demo_needs:
         ref = firebase_service.db.collection("needs").document(need["id"])
-        batch.set(ref, {**need, "reported_at": datetime.utcnow(), "tasks_spawned": 1})
+        batch.set(ref, {**need, "reported_at": datetime.now(timezone.utc).replace(tzinfo=None), "tasks_spawned": 1})
         task_ref = firebase_service.db.collection("tasks").document(need["id"])
         batch.set(task_ref, {
             "neoNeedId": need["id"],
             "title": f"{need['sub_type'].replace('_', ' ').title()} — {need['location']['name']}",
             "description": need["description"],
             "status": need["status"],
-            "createdAt": datetime.utcnow(),
+            "createdAt": datetime.now(timezone.utc).replace(tzinfo=None),
             "urgency": need["urgency_score"],
             "location": need["location"],
             "xpReward": int(need["urgency_score"] * 1000),
@@ -137,7 +137,7 @@ async def _seed_firestore_demo():
         event_type="SEED_LOADED",
         title="Supercharged Urban Flood Demo Loaded",
         description="Massive scale Mumbai flood scenario seeded with inflated values.",
-        metadata={"scenario": "Supercharged Urban Flood", "timestamp": datetime.utcnow().isoformat()}
+        metadata={"scenario": "Supercharged Urban Flood", "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
     )
 
 

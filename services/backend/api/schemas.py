@@ -1,9 +1,49 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, Field
+
+# ── Pagination ────────────────────────────────────────────────────────────────
+
+T = TypeVar("T")
+
+
+class PaginationParams(BaseModel):
+    """Standard page/page_size query parameters for list endpoints."""
+    page:      int = Field(1,  ge=1,  description="Page number (1-indexed)")
+    page_size: int = Field(20, ge=1, le=200, description="Items per page")
+
+    @property
+    def offset(self) -> int:
+        return (self.page - 1) * self.page_size
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Standard paginated response envelope."""
+    items:     List[Any]
+    total:     int
+    page:      int
+    page_size: int
+    pages:     int
+    has_next:  bool
+    has_prev:  bool
+
+
+def make_paginated(items: list, total: int, p: PaginationParams) -> Dict[str, Any]:
+    """Build a PaginatedResponse dict from items + total + pagination params."""
+    pages = max(1, math.ceil(total / p.page_size))
+    return {
+        "items":     items,
+        "total":     total,
+        "page":      p.page,
+        "page_size": p.page_size,
+        "pages":     pages,
+        "has_next":  p.page < pages,
+        "has_prev":  p.page > 1,
+    }
 
 
 class UserResponse(BaseModel):
