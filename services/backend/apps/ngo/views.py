@@ -115,16 +115,21 @@ class VolunteersView(APIView):
             profiles = list(profiles)
         if status:
             profiles = [p for p in profiles if p.status == status]
+        user_map = {
+            u["id"]: u
+            for u in User.objects.filter(
+                id__in=[p.user_id for p in profiles]
+            ).values("id", "email")
+        }
         result = []
         for p in profiles:
-            try:
-                u = User.objects.get(id=p.user_id)
-            except User.DoesNotExist:
+            u = user_map.get(p.user_id)
+            if not u:
                 continue
             completed = Assignment.objects.filter(volunteer_id=p.user_id, ngo_id=nid, status="completed").count()
             total = Assignment.objects.filter(volunteer_id=p.user_id, ngo_id=nid).count()
             result.append({
-                "id": p.id, "user_id": p.user_id, "email": u.email,
+                "id": p.id, "user_id": p.user_id, "email": u["email"],
                 "full_name": p.full_name, "skills": p.skills, "status": p.status,
                 "city": p.city, "availability": p.availability,
                 "profile_completeness_score": p.profile_completeness_score,
@@ -204,12 +209,22 @@ class TasksView(APIView):
         task = Task.objects.create(ngo_id=nid, **d)
         try:
             from services.neo4j_service import neo4j_service
-            import asyncio
-            asyncio.create_task(neo4j_service.ingest_task({
-                "id": task.id, "title": task.title, "description": task.description,
-                "required_skills": task.required_skills, "priority": task.priority,
-                "lat": task.lat, "lng": task.lng, "ngo_id": nid,
-            }))
+            from asgiref.sync import async_to_sync
+            import threading
+            _t, _nid = task, nid
+
+            def _ingest():
+                try:
+                    async_to_sync(neo4j_service.upsert_task_node)(
+                        task_id=_t.id, ngo_id=_nid, title=_t.title,
+                        required_skills=_t.required_skills or [],
+                        urgency=float(_t.urgency_score or 50), status=_t.status,
+                        lat=_t.lat, lng=_t.lng,
+                    )
+                except Exception as exc:
+                    logger.warning("Neo4j task ingest failed: %s", exc)
+
+            threading.Thread(target=_ingest, daemon=True).start()
         except Exception:
             pass
         return Response({"id": task.id, "title": task.title, "status": task.status,
@@ -711,17 +726,22 @@ class VolunteerLocationsView(APIView):
 
     def get(self, request):
         nid = request.user.ngo_id
-        profiles = VolunteerProfile.objects.filter(
+        profiles = list(VolunteerProfile.objects.filter(
             ngo_id=nid, share_location=True, lat__isnull=False, lng__isnull=False
-        )
+        ))
+        user_map = {
+            u["id"]: u
+            for u in User.objects.filter(
+                id__in=[p.user_id for p in profiles]
+            ).values("id", "email")
+        }
         result = []
         for p in profiles:
-            try:
-                u = User.objects.get(id=p.user_id)
-            except User.DoesNotExist:
+            u = user_map.get(p.user_id)
+            if not u:
                 continue
             result.append({
-                "id": p.id, "user_id": p.user_id, "email": u.email,
+                "id": p.id, "user_id": p.user_id, "email": u["email"],
                 "lat": p.lat, "lng": p.lng,
                 "skills": p.skills, "availability": p.availability, "status": p.status,
             })

@@ -54,7 +54,7 @@ async function handleGoogleSignIn(
   const name  = firebaseUser.displayName ?? "";
 
   // Step 2: Check if email already registered
-  let check: { exists: boolean; role: string | null; ngo_id: string | null };
+  let check: { exists: boolean };
   try {
     check = await api.checkEmail(email);
   } catch (e: unknown) {
@@ -64,10 +64,10 @@ async function handleGoogleSignIn(
   }
 
   if (check.exists) {
-    // Existing user — exchange for JWT and redirect to dashboard seamlessly
+    // Existing user — exchange for JWT; role is returned by googleAuth itself
     try {
       const data = await googleAuthWithRetry(
-        { email, firebase_uid: uid, role: check.role as "ngo_admin" | "volunteer" },
+        { email, firebase_uid: uid, role: role as "ngo_admin" | "volunteer" },
         { attempts: 3, timeoutMs: 30000 },
       );
       localStorage.setItem("ngo_token", data.token);

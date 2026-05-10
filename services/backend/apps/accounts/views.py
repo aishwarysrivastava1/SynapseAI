@@ -2,6 +2,7 @@
 import string
 import logging
 from datetime import datetime, timezone
+from django.utils import timezone as dj_tz
 
 from django.db import IntegrityError
 from rest_framework.views import APIView
@@ -34,7 +35,7 @@ def _record_consent_events(user_id: str, data: dict) -> None:
 
 
 def _seed_ngo_demo_data(admin_user_id: str, ngo_id: str) -> None:
-    now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+    now = dj_tz.now()
     vol_specs = [
         ("Amit Kumar",   "amit",  ["medical_aid", "search_rescue"],          "Mumbai",    4),
         ("Priya Sharma", "priya", ["logistics", "water_purification"],        "Delhi",     3),
@@ -125,7 +126,7 @@ def _seed_ngo_demo_data(admin_user_id: str, ngo_id: str) -> None:
 
 def _seed_volunteer_demo_data(vol_user_id: str, ngo_id: str) -> None:
     from datetime import timedelta
-    now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+    now = dj_tz.now()
 
     open_task_specs = [
         ("Flood Relief — Food Distribution","Distribute food packets.",["logistics"],"high",1,19.040,72.854),
@@ -196,7 +197,7 @@ class SignupView(APIView):
                 consent_analytics=d.get("consent_analytics",True),
                 consent_personalization=d.get("consent_personalization",True),
                 consent_ai_training=d.get("consent_ai_training",False),
-                profile_completed_at=datetime.now(tz=timezone.utc).replace(tzinfo=None) if d.get("full_name") and d.get("phone") else None,
+                profile_completed_at=dj_tz.now() if d.get("full_name") and d.get("phone") else None,
             )
             VolunteerProfile.objects.create(
                 user_id=user.id, ngo_id=ngo.id, skills=d.get("skills",[]),
@@ -245,7 +246,7 @@ class LoginView(APIView):
             return Response({"detail": "Invalid credentials"}, status=401)
         if not user.password_hash or not verify_password(d["password"], user.password_hash):
             return Response({"detail": "Invalid credentials"}, status=401)
-        user.last_login_at = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+        user.last_login_at = dj_tz.now()
         user.save(update_fields=["last_login_at"])
         token = create_token(user.id, user.role, user.ngo_id, user.email)
         return Response({
@@ -264,7 +265,7 @@ class GoogleAuthView(APIView):
         d = s.validated_data
         try:
             user = User.objects.get(email=d["email"])
-            user.last_login_at = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+            user.last_login_at = dj_tz.now()
             user.save(update_fields=["last_login_at"])
             token = create_token(user.id, user.role, user.ngo_id, user.email)
             return Response({
@@ -290,7 +291,7 @@ class GoogleAuthView(APIView):
                     consent_analytics=d.get("consent_analytics",True),
                     consent_personalization=d.get("consent_personalization",True),
                     consent_ai_training=d.get("consent_ai_training",False),
-                    profile_completed_at=datetime.now(tz=timezone.utc).replace(tzinfo=None) if d.get("full_name") and d.get("phone") else None,
+                    profile_completed_at=dj_tz.now() if d.get("full_name") and d.get("phone") else None,
                 )
                 VolunteerProfile.objects.create(
                     user_id=user.id, ngo_id=ngo.id, skills=d.get("skills",[]),
@@ -347,7 +348,7 @@ class GuestLoginView(APIView):
         user = User.objects.create(
             email=guest_email, password_hash=hash_password("guest_password123"),
             role="ngo_admin", ngo_id=None, full_name="Hackathon Guest",
-            phone="555-0000", profile_completed_at=datetime.now(tz=timezone.utc).replace(tzinfo=None),
+            phone="555-0000", profile_completed_at=dj_tz.now(),
         )
         code = _random_code()
         while NGO.objects.filter(invite_code=code).exists():
@@ -376,7 +377,7 @@ class GuestVolunteerLoginView(APIView):
         vol_user = User.objects.create(
             email=guest_email, password_hash=hash_password("guest_password123"),
             role="volunteer", ngo_id=None, full_name="Demo Volunteer",
-            phone="+919876543210", profile_completed_at=datetime.now(tz=timezone.utc).replace(tzinfo=None),
+            phone="+919876543210", profile_completed_at=dj_tz.now(),
         )
         code = _random_code()
         while NGO.objects.filter(invite_code=code).exists():
@@ -441,11 +442,8 @@ class CheckEmailView(APIView):
 
     def get(self, request):
         email = request.query_params.get("email", "")
-        try:
-            user = User.objects.get(email=email)
-            return Response({"exists": True, "role": user.role, "ngo_id": user.ngo_id})
-        except User.DoesNotExist:
-            return Response({"exists": False, "role": None, "ngo_id": None})
+        exists = User.objects.filter(email=email).exists()
+        return Response({"exists": exists})
 
 
 class LogoutView(APIView):

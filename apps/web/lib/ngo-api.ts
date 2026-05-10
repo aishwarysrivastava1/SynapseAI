@@ -217,7 +217,7 @@ export const api = {
       body: JSON.stringify(body),
     }).then(handleRes<AuthResponse>),
 
-  checkEmail: (email: string): Promise<{ exists: boolean; role: string | null; ngo_id: string | null }> =>
+  checkEmail: (email: string): Promise<{ exists: boolean }> =>
     fetch(`${BASE}/api/auth/check-email?email=${encodeURIComponent(email)}`)
       .then(res => res.ok ? res.json() : res.json().then((e: { detail?: string }) => { throw new Error(e.detail ?? "check-email failed"); })),
 

@@ -17,15 +17,18 @@ class RealtimeConsumer(AsyncWebsocketConsumer):
                 params[k] = v
         token = params.get("token")
 
-        if token:
-            try:
-                from apps.core.auth_utils import decode_token_payload
-                payload = decode_token_payload(token)
-                self.ngo_id = payload.get("ngo_id") or "global"
-            except Exception as e:
-                logger.warning("WS auth failed: %s", e)
-                await self.close(code=1008)
-                return
+        if not token:
+            await self.close(code=4001)
+            return
+
+        try:
+            from apps.core.auth_utils import decode_token_payload
+            payload = decode_token_payload(token)
+            self.ngo_id = payload.get("ngo_id") or "global"
+        except Exception as e:
+            logger.warning("WS auth failed: %s", e)
+            await self.close(code=1008)
+            return
 
         await self.accept()
         from services.realtime_events import realtime_bus

@@ -10,6 +10,18 @@ from apps.core.permissions import IsNGOAdminWithNGO
 logger = logging.getLogger(__name__)
 
 
+def _safe_int(val, default: int, lo: int = None, hi: int = None) -> int:
+    try:
+        v = int(val)
+    except (TypeError, ValueError):
+        v = default
+    if lo is not None:
+        v = max(v, lo)
+    if hi is not None:
+        v = min(v, hi)
+    return v
+
+
 def _run(coro):
     return async_to_sync(coro)()
 
@@ -50,7 +62,7 @@ class GraphNeedsView(APIView):
         from services.neo4j_service import neo4j_service
         status = request.query_params.get("status")
         ntype = request.query_params.get("type")
-        limit = int(request.query_params.get("limit", 50))
+        limit = _safe_int(request.query_params.get("limit"), 50, 1, 1000)
         params = {"limit": limit}
         where = []
         if status:
@@ -73,7 +85,7 @@ class GraphVolunteersView(APIView):
 
     def get(self, request):
         from services.neo4j_service import neo4j_service
-        limit = int(request.query_params.get("limit", 50))
+        limit = _safe_int(request.query_params.get("limit"), 50, 1, 1000)
         try:
             results = async_to_sync(neo4j_service.run_query)(
                 "MATCH (v:Volunteer) RETURN v LIMIT $limit", {"limit": limit}
@@ -90,7 +102,7 @@ class GraphTasksView(APIView):
 
     def get(self, request):
         from services.neo4j_service import neo4j_service
-        limit = int(request.query_params.get("limit", 50))
+        limit = _safe_int(request.query_params.get("limit"), 50, 1, 1000)
         try:
             results = async_to_sync(neo4j_service.run_query)(
                 "MATCH (t:Task) RETURN t LIMIT $limit", {"limit": limit}
@@ -122,7 +134,7 @@ class GraphCausalChainView(APIView):
     def get(self, request):
         from services.neo4j_service import neo4j_service
         node_id = request.query_params.get("node_id")
-        depth = int(request.query_params.get("depth", 3))
+        depth = _safe_int(request.query_params.get("depth"), 3, 1, 10)
         if not node_id:
             return Response({"detail": "node_id required"}, status=400)
         try:
@@ -270,8 +282,7 @@ class LeaderboardView(APIView):
         from apps.accounts.models import User, VolunteerProfile
         from apps.ngo.models import Assignment
         nid = request.user.ngo_id
-        limit = int(request.query_params.get("limit", 10))
-        limit = max(1, min(50, limit))
+        limit = _safe_int(request.query_params.get("limit"), 10, 1, 50)
         rows = (
             Assignment.objects.filter(ngo_id=nid, status="completed")
             .values("volunteer_id")
@@ -365,8 +376,8 @@ class HotzoneRankingView(APIView):
     def get(self, request):
         from services.neo4j_service import neo4j_service
         nid = request.user.ngo_id
-        limit = int(request.query_params.get("limit", 20))
-        offset = int(request.query_params.get("offset", 0))
+        limit = _safe_int(request.query_params.get("limit"), 20, 1, 200)
+        offset = _safe_int(request.query_params.get("offset"), 0, 0)
         try:
             results = async_to_sync(neo4j_service.run_query)(
                 "MATCH (n:Need {ngo_id: $ngo_id, status: 'PENDING'})-[:LOCATED_IN]->(l:Location) "
@@ -389,8 +400,8 @@ class VolunteerActivityView(APIView):
     def get(self, request):
         from services.neo4j_service import neo4j_service
         nid = request.user.ngo_id
-        limit = int(request.query_params.get("limit", 20))
-        offset = int(request.query_params.get("offset", 0))
+        limit = _safe_int(request.query_params.get("limit"), 20, 1, 200)
+        offset = _safe_int(request.query_params.get("offset"), 0, 0)
         try:
             results = async_to_sync(neo4j_service.run_query)(
                 "MATCH (v:Volunteer {ngo_id: $ngo_id}) "
@@ -414,15 +425,15 @@ class TrendView(APIView):
     permission_classes = [IsNGOAdminWithNGO]
 
     def get(self, request):
-        from datetime import datetime, timedelta, timezone as tz
+        from datetime import timedelta
+        from django.utils import timezone as dj_tz
         from services.firebase_service import firebase_service
         nid = request.user.ngo_id
-        days = int(request.query_params.get("days", 7))
-        days = max(1, min(90, days))
+        days = _safe_int(request.query_params.get("days"), 7, 1, 90)
         trend = []
         try:
             if firebase_service.db:
-                cutoff = datetime.now(tz=tz.utc).replace(tzinfo=None) - timedelta(days=days)
+                cutoff = dj_tz.now() - timedelta(days=days)
                 events = (
                     firebase_service.db.collection("activity")
                     .where("type", "==", "NEED_REPORTED")
@@ -437,9 +448,9 @@ class TrendView(APIView):
                     if d:
                         day_str = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
                         counts[day_str] = counts.get(day_str, 0) + 1
-                now_naive = datetime.now(tz=tz.utc).replace(tzinfo=None)
+                now = dj_tz.now()
                 for i in range(days):
-                    day = (now_naive - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+                    day = (now - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
                     trend.append({"date": day, "count": counts.get(day, 0)})
                 return Response({"trend": trend, "days": days})
             return Response({"trend": [], "days": days, "data_unavailable": True})

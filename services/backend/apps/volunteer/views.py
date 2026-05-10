@@ -1,6 +1,7 @@
 ﻿import logging
 import os
 from datetime import datetime, timezone
+from django.utils import timezone as dj_tz
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -151,21 +152,25 @@ class VolAssignmentActionView(APIView):
             return Response({"detail": "Assignment not found"}, status=404)
         if action == "accept":
             a.status = "accepted"
-            a.accepted_at = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+            a.accepted_at = dj_tz.now()
         elif action == "reject":
             a.status = "rejected"
         elif action == "complete":
             if a.status != "accepted":
                 return Response({"detail": "Assignment must be accepted before completing"}, status=400)
             a.status = "completed"
-            a.completed_at = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+            a.completed_at = dj_tz.now()
             hours = request.data.get("hours_spent")
             if hours:
                 a.hours_spent = hours
             try:
                 t = Task.objects.get(id=a.task_id)
-                t.status = "completed"
-                t.save(update_fields=["status"])
+                remaining = Assignment.objects.filter(
+                    task_id=a.task_id, status__in=["assigned", "accepted"]
+                ).exclude(id=a.id).count()
+                if remaining == 0:
+                    t.status = "completed"
+                    t.save(update_fields=["status"])
             except Task.DoesNotExist:
                 pass
         a.save()
@@ -330,7 +335,6 @@ class VolSOSView(APIView):
 
     def post(self, request):
         from asgiref.sync import async_to_sync
-        from datetime import timezone as tz
         uid = request.user.user_id
         nid = request.user.ngo_id
         message = (request.data.get("message") or "Volunteer triggered SOS").strip()
@@ -356,7 +360,7 @@ class VolSOSView(APIView):
                 nid, "sos_alert", {
                     "volunteer_id": uid, "email": request.user.email,
                     "message": message, "lat": lat, "lng": lng,
-                    "created_at": datetime.now(tz=timezone.utc).isoformat() + "Z",
+                    "created_at": dj_tz.now().isoformat(),
                 }
             )
         except Exception as e:

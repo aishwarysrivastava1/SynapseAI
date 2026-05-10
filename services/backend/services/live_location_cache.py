@@ -1,10 +1,11 @@
 ﻿from __future__ import annotations
 
 import logging
-import os
 import datetime
 import asyncio
 from typing import Any
+
+from django.conf import settings
 
 from asgiref.sync import sync_to_async
 
@@ -39,7 +40,7 @@ class LiveLocationCache:
 
     def __init__(self) -> None:
         self._enabled = True
-        self._ttl_seconds = int(os.getenv("LOCATION_TTL_SECONDS", "120"))
+        self._ttl_seconds = getattr(settings, "REDIS_LOCATION_TTL_SECONDS", 120)
         self._buffer: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._flush_task: asyncio.Task | None = None
@@ -74,7 +75,10 @@ class LiveLocationCache:
                 "timestamp": datetime.datetime.now(tz=datetime.timezone.utc).replace(tzinfo=None),
             }
             if not self._flush_task or self._flush_task.done():
-                self._flush_task = asyncio.create_task(self._scheduled_flush())
+                try:
+                    self._flush_task = asyncio.ensure_future(self._scheduled_flush())
+                except RuntimeError:
+                    pass  # no running event loop; next async call will trigger flush
 
     async def update(self, volunteer_id: str, lat: float, lng: float, share_location: bool) -> None:
         await self.set_location(volunteer_id, None, lat, lng, share_location)
