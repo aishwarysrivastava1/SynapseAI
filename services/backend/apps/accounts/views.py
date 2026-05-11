@@ -176,7 +176,14 @@ class SignupView(APIView):
         s.is_valid(raise_exception=True)
         d = s.validated_data
 
-        if User.objects.filter(email=d["email"]).exists():
+        existing = User.objects.filter(email=d["email"]).first()
+        if existing:
+            role_label = "NGO Admin" if existing.role == "ngo_admin" else "Volunteer"
+            if existing.role != d["role"]:
+                return Response(
+                    {"detail": f"This email is already registered as a {role_label} account. Please use the {role_label} sign-in button."},
+                    status=409,
+                )
             return Response({"detail": "Email already registered"}, status=409)
 
         if d["role"] == "volunteer":
@@ -263,6 +270,12 @@ class GoogleAuthView(APIView):
         d = s.validated_data
         try:
             user = User.objects.get(email=d["email"])
+            if user.role != d["role"]:
+                role_label = "NGO Admin" if user.role == "ngo_admin" else "Volunteer"
+                return Response(
+                    {"detail": f"This email is already registered as a {role_label} account. Please use the {role_label} sign-in button."},
+                    status=409,
+                )
             user.last_login_at = dj_tz.now()
             user.save(update_fields=["last_login_at"])
             token = create_token(user.id, user.role, user.ngo_id, user.email)
@@ -307,6 +320,12 @@ class GoogleAuthView(APIView):
             except IntegrityError:
                 try:
                     user = User.objects.get(email=d["email"])
+                    if user.role != d["role"]:
+                        role_label = "NGO Admin" if user.role == "ngo_admin" else "Volunteer"
+                        return Response(
+                            {"detail": f"This email is already registered as a {role_label} account. Please use the {role_label} sign-in button."},
+                            status=409,
+                        )
                     token = create_token(user.id, user.role, user.ngo_id, user.email)
                     return Response({"token": token, "role": user.role, "ngo_id": user.ngo_id})
                 except User.DoesNotExist:
@@ -328,6 +347,12 @@ class GoogleAuthView(APIView):
         except IntegrityError:
             try:
                 user = User.objects.get(email=d["email"])
+                if user.role != d["role"]:
+                    role_label = "NGO Admin" if user.role == "ngo_admin" else "Volunteer"
+                    return Response(
+                        {"detail": f"This email is already registered as a {role_label} account. Please use the {role_label} sign-in button."},
+                        status=409,
+                    )
                 token = create_token(user.id, user.role, user.ngo_id, user.email)
                 return Response({"token": token, "role": user.role, "ngo_id": user.ngo_id,
                                  "needs_ngo_setup": user.role=="ngo_admin" and not user.ngo_id})
@@ -440,8 +465,11 @@ class CheckEmailView(APIView):
 
     def get(self, request):
         email = request.query_params.get("email", "")
-        exists = User.objects.filter(email=email).exists()
-        return Response({"exists": exists})
+        try:
+            user = User.objects.get(email=email)
+            return Response({"exists": True, "role": user.role})
+        except User.DoesNotExist:
+            return Response({"exists": False, "role": None})
 
 
 class LogoutView(APIView):

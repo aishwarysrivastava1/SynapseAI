@@ -108,11 +108,24 @@ export function NGOAuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(authErrorMessage(err));
     }
 
-    // Step 2: Exchange Firebase identity with backend for a custom JWT
+    // Step 2: Pre-check email — detect role mismatch before auth round-trip
+    const email = firebaseUser.email!;
+    try {
+      const check = await api.checkEmail(email);
+      if (check.exists && check.role && check.role !== role) {
+        const label = check.role === "ngo_admin" ? "NGO Admin" : "Volunteer";
+        throw new Error(`This email is already registered as a ${label} account. Please use the ${label} sign-in button.`);
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes("registered as")) throw err;
+      // checkEmail failure is non-fatal — let googleAuth handle it
+    }
+
+    // Step 3: Exchange Firebase identity with backend for a custom JWT
     let data;
     try {
       data = await googleAuthWithRetry({
-        email: firebaseUser.email!,
+        email,
         firebase_uid: firebaseUser.uid,
         role,
         invite_code: inviteCode,

@@ -52,11 +52,19 @@ async function handleGoogleSignIn(
   const uid   = firebaseUser.uid;
   const name  = firebaseUser.displayName ?? "";
 
-  let check: { exists: boolean };
+  let check: { exists: boolean; role: "ngo_admin" | "volunteer" | null };
   try {
     check = await api.checkEmail(email);
   } catch (e: unknown) {
     setError(friendlyError(e));
+    setBusy(false);
+    return;
+  }
+
+  // Pre-check: email exists under a different role — fail immediately before auth round-trip
+  if (check.exists && check.role && check.role !== role) {
+    const label = check.role === "ngo_admin" ? "NGO Admin" : "Volunteer";
+    setError(`This email is already registered as a ${label} account. Please use the ${label} sign-in button.`);
     setBusy(false);
     return;
   }
