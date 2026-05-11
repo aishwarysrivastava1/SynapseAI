@@ -17,9 +17,10 @@ type UseRealtimeSocketOptions = {
 };
 
 function buildRealtimeWsUrl(token: string): string {
-  const base = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-  const normalized = base.replace(/^http/i, "ws").replace(/\/$/, "");
-  return `${normalized}/api/realtime/ws?token=${encodeURIComponent(token)}`;
+  const base = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+  // Replace full protocol — /^http/i would only strip "http" from "https", leaving "s://"
+  const wsBase = base.replace(/^https:/i, "wss:").replace(/^http:/i, "ws:");
+  return `${wsBase}/api/realtime/ws?token=${encodeURIComponent(token)}`;
 }
 
 export function useRealtimeSocket({ token, enabled = true, onEvent }: UseRealtimeSocketOptions) {

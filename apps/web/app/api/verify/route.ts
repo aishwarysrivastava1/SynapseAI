@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
       );
 
       // Sync to Neo4j — fire-and-forget, non-critical path
-      const backendUrl    = process.env.NEXT_PUBLIC_BACKEND_URL;
+      const backendUrl    = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
       const serviceSecret = process.env.INTERNAL_SERVICE_SECRET ?? "";
       if (backendUrl && task.neoTaskId) {
         fetch(`${backendUrl}/api/graph/update-node`, {

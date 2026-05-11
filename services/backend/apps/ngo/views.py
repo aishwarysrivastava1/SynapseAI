@@ -176,6 +176,20 @@ class VolunteerDetailView(APIView):
         return Response({"message": "Volunteer deactivated"})
 
 
+# ── Deactivate volunteer ──────────────────────────────────────────────────────
+
+class DeactivateVolunteerView(APIView):
+    authentication_classes = [SynapseJWTAuthentication]
+    permission_classes = [IsNGOAdminWithNGO]
+
+    def post(self, request, volunteer_id):
+        nid = request.user.ngo_id
+        updated = VolunteerProfile.objects.filter(user_id=volunteer_id, ngo_id=nid).update(status="inactive")
+        if not updated:
+            return Response({"detail": "Volunteer not found"}, status=404)
+        return Response({"message": "Volunteer deactivated"})
+
+
 # ── Tasks ────────────────────────────────────────────────────────────────────
 
 class TasksView(APIView):

@@ -1,7 +1,7 @@
 import { NeedNode, HotspotResult, SimulationComparison } from "./types";
 import { fetchSafe, friendlyError } from "./ngo-api";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const API_BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const IS_PROD = process.env.NODE_ENV === "production";
 
 /**

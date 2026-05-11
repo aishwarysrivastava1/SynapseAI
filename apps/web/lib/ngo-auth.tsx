@@ -25,7 +25,7 @@ type NGOAuthCtx = {
 
 const Ctx = createContext<NGOAuthCtx>({} as NGOAuthCtx);
 
-const API = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const API = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, "");
 
 function parseToken(token: string): (Omit<NGOUser, "email"> & { email: string }) | null {
   try {

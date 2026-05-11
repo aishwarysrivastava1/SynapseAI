@@ -49,7 +49,10 @@ const nextConfig = {
 
       if (backendUrl) {
         try {
-          connectSrc.push(new URL(backendUrl).origin);
+          const origin = new URL(backendUrl).origin;
+          connectSrc.push(origin);
+          // WebSocket connections need wss:// separately — https:// does not cover it
+          connectSrc.push(origin.replace(/^https:/i, "wss:").replace(/^http:/i, "ws:"));
         } catch {
           // keep CSP valid even if env is malformed
         }

@@ -47,9 +47,12 @@ LOCAL_APPS = [
     "apps.graph",
     "apps.ingest",
     "apps.realtime",
+    "simulation",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+APPEND_SLASH = False
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",

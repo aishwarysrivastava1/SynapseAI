@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     // This endpoint proxies webhook events from Firebase to Neo4j
     
     if (data.type === "volunteer_status" && data.neoId) {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/graph/update-node`, {
+      const res = await fetch(`${(process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "")}/api/graph/update-node`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: AbortSignal.timeout(10000),
