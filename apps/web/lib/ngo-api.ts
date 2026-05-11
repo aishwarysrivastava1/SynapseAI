@@ -2,7 +2,9 @@ import type { AuthResponse, TaskResponse, VolunteerProfileResponse } from "./typ
 import { isGuestMode } from "./guest-mode";
 import { interceptGuestRequest } from "./guest-api-interceptor";
 
-const BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
+// All API calls use relative paths (/api/*) — proxied to the backend by
+// next.config.js rewrites(). No cross-origin requests from the browser.
+const BASE = "";
 const DEFAULT_TIMEOUT = 30000;
 
 type GoogleAuthBody = {
@@ -63,8 +65,7 @@ export function friendlyError(e: unknown): string {
     lower.includes("load failed") ||
     (e instanceof TypeError && !msg)  // TypeError with empty message = fetch network error
   ) {
-    const target = BASE.includes("localhost") ? " (at " + BASE + ")" : "";
-    return `Cannot reach server${target}. Check your connection and try again.`;
+    return "Cannot reach server. Check your connection and try again.";
   }
   if (msg.includes("401") || lower.includes("unauthorized") || lower.includes("not authenticated"))
     return "Session expired. Please sign in again.";

@@ -30,6 +30,31 @@ const nextConfig = {
     ];
   },
 
+  // Proxy all Django API routes through Vercel so the browser never makes
+  // cross-origin requests. Eliminates CORS and CSP issues for every API call.
+  // Next.js checks its own /api/* routes first, so /api/health, /api/tasks/*, etc.
+  // are handled locally and never reach these rewrites.
+  async rewrites() {
+    const backend = (process.env.NEXT_PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
+    if (!backend) return [];
+    return [
+      { source: '/api/auth/:path*',       destination: `${backend}/api/auth/:path*` },
+      { source: '/api/ngo/:path*',        destination: `${backend}/api/ngo/:path*` },
+      { source: '/api/volunteer/:path*',  destination: `${backend}/api/volunteer/:path*` },
+      { source: '/api/chatbot/:path*',    destination: `${backend}/api/chatbot/:path*` },
+      { source: '/api/graph/:path*',      destination: `${backend}/api/graph/:path*` },
+      { source: '/api/analytics/:path*',  destination: `${backend}/api/analytics/:path*` },
+      { source: '/api/volunteers/:path*', destination: `${backend}/api/volunteers/:path*` },
+      { source: '/api/ingest/:path*',     destination: `${backend}/api/ingest/:path*` },
+      { source: '/api/voice/:path*',      destination: `${backend}/api/voice/:path*` },
+      { source: '/api/sim/:path*',        destination: `${backend}/api/sim/:path*` },
+      { source: '/api/seed/:path*',       destination: `${backend}/api/seed/:path*` },
+      { source: '/api/realtime/status',   destination: `${backend}/api/realtime/status` },
+      // /api/realtime/ws (WebSocket) must stay as a direct wss:// connection —
+      // Vercel rewrites do not proxy WebSocket upgrades.
+    ];
+  },
+
   async headers() {
     const isProd = process.env.NODE_ENV === 'production';
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';

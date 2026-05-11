@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { api, googleAuthWithRetry, friendlyError } from "./ngo-api";
+import { api, googleAuthWithRetry, friendlyError, fetchSafe } from "./ngo-api";
 import { signInWithGoogle as firebaseSignInWithGoogle } from "./firebase-auth";
 import { authErrorMessage, isDismissedPopupError } from "./auth-errors";
 import { setToken, clearToken } from "./token-manager";
@@ -26,7 +26,8 @@ type NGOAuthCtx = {
 
 const Ctx = createContext<NGOAuthCtx>({} as NGOAuthCtx);
 
-const API = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, "");
+// Relative path — proxied to the backend by next.config.js rewrites().
+const API = "";
 
 function parseToken(token: string): (Omit<NGOUser, "email"> & { email: string }) | null {
   try {
@@ -68,32 +69,21 @@ export function NGOAuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string): Promise<NGOUser> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    try {
-      const res = await fetch(`${API}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `Login failed (${res.status})`);
-      }
-      const data = await res.json();
-      setToken(data.token);
-      const parsed = parseToken(data.token) as NGOUser;
-      setUser(parsed);
-      return parsed;
-    } catch (e: unknown) {
-      clearTimeout(timeoutId);
-      if ((e as { name?: string })?.name === "AbortError") {
-        throw new Error("Login request timed out. Please try again.");
-      }
-      throw e;
+    // fetchSafe gives retry logic + timeout handling — replacing raw fetch
+    const res = await fetchSafe(`${API}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Login failed (${res.status})`);
     }
+    const data = await res.json();
+    setToken(data.token);
+    const parsed = parseToken(data.token) as NGOUser;
+    setUser(parsed);
+    return parsed;
   };
 
   const loginWithGoogle = async (role: "ngo_admin" | "volunteer", inviteCode?: string): Promise<NGOUser> => {
