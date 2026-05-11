@@ -118,35 +118,42 @@ const GoogleIcon = () => (
 function ConnectivityBanner() {
   const [status, setStatus] = useState<"checking" | "online" | "offline">("checking");
   const failCountRef = React.useRef(0);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Use AbortController instead of AbortSignal.timeout() for broad browser support
-    const check = async () => {
+    // Retry delays (ms): wait 2s, 7s, 17s, 32s, then every 60s
+    const RETRY_DELAYS = [2000, 5000, 10000, 15000, 60000];
+
+    const check = async (attempt: number) => {
       const controller = new AbortController();
-      // 12 seconds — covers Railway cold-start (10–15s) + Supabase DB wakeup
-      const timer = setTimeout(() => controller.abort(), 12000);
+      const abortTimer = setTimeout(() => controller.abort(), 12000);
       try {
         const res = await fetch(`${BACKEND}/health`, { signal: controller.signal });
-        clearTimeout(timer);
+        clearTimeout(abortTimer);
         if (res.ok) {
           failCountRef.current = 0;
           setStatus("online");
-        } else {
-          failCountRef.current += 1;
-          if (failCountRef.current >= 2) setStatus("offline");
+          return; // success — stop retrying
         }
-      } catch {
-        clearTimeout(timer);
         failCountRef.current += 1;
-        // Only show error after 2 consecutive failures — avoids false alarms on cold-start
-        if (failCountRef.current >= 2) setStatus("offline");
+      } catch {
+        clearTimeout(abortTimer);
+        failCountRef.current += 1;
       }
+
+      // Only show error banner after 3 consecutive failures
+      if (failCountRef.current >= 3) {
+        setStatus("offline");
+      }
+
+      // Schedule next check with capped exponential backoff
+      const nextDelay = RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)];
+      timerRef.current = setTimeout(() => check(attempt + 1), nextDelay);
     };
 
-    // 2-second initial delay so the page renders before the network request fires
-    const initialTimer = setTimeout(check, 2000);
-    const interval = setInterval(check, 60000);
-    return () => { clearTimeout(initialTimer); clearInterval(interval); };
+    // Start first check after a 2s page-render delay
+    timerRef.current = setTimeout(() => check(1), 2000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
   if (status === "online") return null;
